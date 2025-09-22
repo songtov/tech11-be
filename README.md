@@ -7,7 +7,7 @@
 ## 실행 환경
 - Node.js 18+
 - 의존성 설치: `npm i`
-- 실행: `npm run dev`  
+- 실행: `npm run dev`, `npm run dev -- -p 3001`  
   - MyHR → `http://localhost:3000`  
   - AX College → `http://localhost:3001`
 - Next.js 기반 빌드 (React 18 + TypeScript)

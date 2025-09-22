@@ -15,6 +15,7 @@ import {
   CircleArrowLeftIcon,
   CircleDashed,
   Trello,
+  UserCheck,
 } from "lucide-react"
 import SidebarSection from "./SidebarSection"
 import type { MenuItem } from "./types"
@@ -26,7 +27,17 @@ import { useUiStore } from "@/stores/useUiStore"
 const menuItems: MenuItem[] = [
   { id: "favorites", label: "즐겨찾기", icon: Star, path: "/favorites" },
   { id: "tasks", label: "업무 담당", icon: Briefcase, path: "/tasks" },
-  { id: "profile", label: "Profile", icon: UserRound, path: "/profile" },
+  { id: "profile", label: "Profile", icon: UserRound,
+    
+    children: [
+      { id: "profile-search", label: "프로파일 조회", icon: UserCheck,
+        children: [
+          { id: "talent-profile", label: "AXpress Profile", icon: UserCheck, path: "/profile/competency" },
+        ]        
+      },
+    ],    
+    
+    path: "/profile" },
   { id: "internal-apply", label: "사내 공모", icon: Megaphone, path: "/internal-apply" },
   { id: "rewards", label: "보상", icon: Coins, path: "/rewards" },
   { id: "attendance", label: "근태", icon: CalendarClock, path: "/attendance" },
