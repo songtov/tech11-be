@@ -167,6 +167,24 @@ def make_explainer_chain():
     return prompt | build_llm(use_mini=False) | StrOutputParser()
 
 
+def make_figure_analysis_chain():
+    prompt = PromptTemplate.from_template(
+        """당신은 논문의 그림, 차트, 그래프를 분석하는 전문가입니다.
+아래 문서를 읽고 다음 항목을 포함해 상세한 그림 분석을 작성하세요.
+
+1) 주요 그림/차트/그래프 식별
+2) 각 그림의 핵심 메시지와 의미
+3) 데이터 해석 및 인사이트
+4) 그림 간의 연관성과 흐름
+5) 실무 적용 시 시각화 방향
+
+문서 내용:
+{document_content}
+"""
+    )
+    return prompt | build_llm(use_mini=False) | StrOutputParser()
+
+
 def make_judge_chain():
     prompt = PromptTemplate.from_template(
         """다음 생성물의 품질을 평가하세요.
@@ -193,17 +211,20 @@ class AgentState(TypedDict, total=False):
     query_summary: str
     query_quiz: str
     query_explainer: str
+    query_figure_analysis: str
     k: int  # RAG 검색 개수
 
     # 산출물
     summary: str
     quiz: str
     explainer: str
+    figure_analysis: str
 
     # 내부 신호
     judge_summary_ok: bool
     judge_quiz_ok: bool
     judge_explainer_ok: bool
+    judge_figure_analysis_ok: bool
 
 
 # ==========================
@@ -296,6 +317,32 @@ def cond_on_explainer(state: AgentState) -> str:
     return "retry"
 
 
+def node_figure_analysis(state: AgentState) -> AgentState:
+    vs = state["vectorstore"]
+    k = state.get("k", 12)
+    chunks = vs.similarity_search(
+        state.get("query_figure_analysis", "figure analysis and visualization interpretation"), k=k
+    )
+    content = "\n\n".join([c.page_content for c in chunks])
+    figure_analysis_chain = make_figure_analysis_chain()
+    figure_analysis = figure_analysis_chain.invoke({"document_content": content})
+    return {"figure_analysis": figure_analysis}
+
+
+def node_judge_figure_analysis(state: AgentState) -> AgentState:
+    judge = make_judge_chain()
+    verdict = judge.invoke({"generated": state.get("figure_analysis", "")}).strip().upper()
+    return {"judge_figure_analysis_ok": verdict.startswith("YES")}
+
+
+def cond_on_figure_analysis(state: AgentState) -> str:
+    if state.get("judge_figure_analysis_ok", True):
+        return "ok"
+    new_k = min(40, state.get("k", 12) + 4)
+    state["k"] = new_k
+    return "retry"
+
+
 def node_tts(state: AgentState) -> AgentState:
     script = state.get("explainer", "")
     if not script:
@@ -322,6 +369,8 @@ def build_workflow():
     graph.add_node("judge_quiz", node_judge_quiz)
     graph.add_node("explainer", node_explainer)
     graph.add_node("judge_explainer", node_judge_explainer)
+    graph.add_node("figure_analysis", node_figure_analysis)
+    graph.add_node("judge_figure_analysis", node_judge_figure_analysis)
     graph.add_node("tts", node_tts)
 
     # 진입점
@@ -349,13 +398,24 @@ def build_workflow():
         },
     )
 
-    # explainer → judge → (retry: explainer, ok: tts)
+    # explainer → judge → (retry: explainer, ok: figure_analysis)
     graph.add_edge("explainer", "judge_explainer")
     graph.add_conditional_edges(
         "judge_explainer",
         cond_on_explainer,
         {
             "retry": "explainer",
+            "ok": "figure_analysis",
+        },
+    )
+
+    # figure_analysis → judge → (retry: figure_analysis, ok: tts)
+    graph.add_edge("figure_analysis", "judge_figure_analysis")
+    graph.add_conditional_edges(
+        "judge_figure_analysis",
+        cond_on_figure_analysis,
+        {
+            "retry": "figure_analysis",
             "ok": "tts",
         },
     )
@@ -385,6 +445,7 @@ def run_multi_agent(pdf_path_or_url: str):
         "query_summary": "summary overview of this document",
         "query_quiz": "Generate exam questions based on this document",
         "query_explainer": "detailed explanation with industry applications",
+        "query_figure_analysis": "figure analysis and visualization interpretation",
     }
 
     # 실행
@@ -406,6 +467,11 @@ def run_multi_agent(pdf_path_or_url: str):
         with open(f"explainer_{ts}.txt", "w", encoding="utf-8") as f:
             f.write(final_state["explainer"])
         print(f"📝 해설 저장: explainer_{ts}.txt")
+
+    if final_state.get("figure_analysis"):
+        with open(f"figure_analysis_{ts}.txt", "w", encoding="utf-8") as f:
+            f.write(final_state["figure_analysis"])
+        print(f"📊 그림 분석 저장: figure_analysis_{ts}.txt")
 
     print("🎉 모든 작업 완료!")
     return final_state
