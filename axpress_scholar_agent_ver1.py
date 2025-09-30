@@ -9,6 +9,7 @@ import requests
 import json
 import os
 import sys
+import time
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
@@ -52,6 +53,16 @@ class AXPressScholarAgent:
             "Gen AI": ["artificial intelligence", "machine learning", "deep learning", "LLM", "generative AI", "neural networks"]
         }
         
+        # 도메인별 유명 저널 정보 (인용수 기반 검색용)
+        self.domain_journals = {
+            "금융": ["Journal of Finance", "Journal of Financial Economics", "Review of Financial Studies", "Science"],
+            "통신": ["IEEE Communications Magazine", "IEEE Transactions on Communications", "Science"],
+            "제조": ["Journal of Manufacturing Systems", "CIRP Annals", "Science"],
+            "유통/물류": ["Transportation Research Part E", "International Journal of Physical Distribution & Logistics Management"],
+            "Gen AI": ["AI Journal", "Journal of Artificial Intelligence Research", "NeurIPS", "ICML", "ICLR", "Science"],
+            "CLOUD": ["IEEE Transactions on Cloud Computing", "Springer Journal of Cloud Computing", "Science"]
+        }
+        
         # arXiv 카테고리 매핑 (더 정확한 검색을 위해)
         self.arxiv_categories = {
             "제조": ["cs.RO", "cs.SY", "eess.SY"],  # Robotics, Systems, Control Systems
@@ -63,49 +74,247 @@ class AXPressScholarAgent:
         }
     
     def fetch_papers(self, domain: str) -> List[Paper]:
-        """지정된 도메인에서 논문을 검색합니다."""
-        logger.info(f"도메인 '{domain}'에서 논문 검색 시작")
+        """지정된 도메인에서 논문을 검색합니다. (2년 내 인용수 높은 5편)"""
+        logger.info(f"도메인 '{domain}'에서 논문 검색 시작 (고인용 논문 모드)")
+        
+        # 새로운 고인용 논문 검색 기능 사용
+        return self.fetch_highly_cited_papers(domain)
+    
+    
+    def fetch_highly_cited_papers(self, domain: str) -> List[Paper]:
+        """도메인별 유명 저널에서 2년 내 인용수가 가장 높은 5개 논문을 검색하고 arXiv에서 다운로드합니다."""
+        logger.info(f"도메인 '{domain}'에서 고인용 논문 검색 시작 (Semantic Scholar + arXiv)")
         
         if domain not in self.domain_keywords:
             raise ValueError(f"지원하지 않는 도메인입니다: {domain}")
         
-        papers = []
-        
         try:
-            # 최신 논문 4편 검색 (최근 1년)
-            latest_papers = self._search_latest_papers(domain, max_results=10)
+            # 2년 전 날짜 계산
+            two_years_ago = datetime.now() - timedelta(days=730)
             
-            # 인기 논문 1편 검색 (인용수 기준)
-            popular_paper = self._search_popular_paper(domain)
+            # 도메인별 저널 정보 가져오기
+            journals = self.domain_journals.get(domain, [])
+            if not journals:
+                logger.warning(f"도메인 '{domain}'에 대한 저널 정보가 없습니다. 기본 검색을 수행합니다.")
+                return self.fetch_papers(domain)
             
-            # 최신 논문 4편 선택 (중복 제거)
-            selected_latest = []
-            seen_ids = set()
+            all_papers = []
             
-            for paper in latest_papers:
-                if paper.id not in seen_ids and len(selected_latest) < 4:
-                    selected_latest.append(paper)
-                    seen_ids.add(paper.id)
+            # 각 저널별로 Semantic Scholar API로 검색
+            for journal in journals:
+                logger.info(f"저널 '{journal}'에서 논문 검색 중...")
+                
+                # Semantic Scholar API로 검색 (모든 연도)
+                journal_papers = self._search_semantic_scholar(journal, two_years_ago)
+                all_papers.extend(journal_papers)
+                
+                # API 호출 제한을 위한 대기
+                time.sleep(1.0)
             
-            # 인기 논문이 중복되지 않으면 추가
-            if popular_paper and popular_paper.id not in seen_ids:
-                papers.append(popular_paper)
-            elif popular_paper:
-                # 인기 논문이 중복이면 최신 논문 중 하나를 대체
-                if selected_latest:
-                    selected_latest[0] = popular_paper
+            if not all_papers:
+                logger.warning("Semantic Scholar에서 논문을 찾을 수 없습니다. 기본 검색을 수행합니다.")
+                return self.fetch_papers(domain)
             
-            papers.extend(selected_latest)
+            # 2년 내 논문만 필터링
+            recent_papers = []
+            for paper in all_papers:
+                try:
+                    # published_date에서 연도 추출
+                    if paper.published_date:
+                        paper_year = int(paper.published_date.split('-')[0])
+                        if paper_year >= two_years_ago.year:
+                            recent_papers.append(paper)
+                except:
+                    continue
             
-            # 5편이 되도록 조정
-            papers = papers[:5]
+            if not recent_papers:
+                logger.warning("2년 내 논문을 찾을 수 없습니다. 기본 검색을 수행합니다.")
+                return self.fetch_papers(domain)
             
-            logger.info(f"총 {len(papers)}편의 논문을 찾았습니다.")
-            return papers
+            # 인용수 기준으로 정렬 (2년 내 논문 중에서)
+            recent_papers.sort(key=lambda x: x.citation_count, reverse=True)
+            
+            # 상위 5개 선택 (2년 내 인용수 가장 높은 논문들)
+            selected_papers = recent_papers[:5]
+            
+            logger.info(f"2년 내 인용수 기준 상위 {len(selected_papers)}편의 논문을 찾았습니다.")
+            
+            # 이제 arXiv에서 해당 논문들을 검색하여 다운로드 가능한 버전을 찾습니다
+            arxiv_papers = []
+            for paper in selected_papers:
+                logger.info(f"arXiv에서 '{paper.title}' 검색 중...")
+                arxiv_paper = self._search_arxiv_by_title(paper.title)
+                if arxiv_paper:
+                    # Semantic Scholar에서 가져온 인용수 정보를 유지
+                    arxiv_paper.citation_count = paper.citation_count
+                    arxiv_papers.append(arxiv_paper)
+                    logger.info(f"arXiv에서 발견: {arxiv_paper.title}")
+                else:
+                    logger.warning(f"arXiv에서 찾을 수 없음: {paper.title}")
+                    # arXiv에서 찾을 수 없는 경우 원본 논문 정보를 그대로 사용
+                    arxiv_papers.append(paper)
+                
+                # API 호출 제한을 위한 대기
+                time.sleep(0.5)
+            
+            logger.info(f"최종 {len(arxiv_papers)}편의 논문을 반환합니다.")
+            return arxiv_papers
             
         except Exception as e:
-            logger.error(f"논문 검색 중 오류 발생: {e}")
-            raise
+            logger.error(f"고인용 논문 검색 중 오류 발생: {e}")
+            # 오류 발생 시 기본 검색으로 fallback
+            return self.fetch_papers(domain)
+    
+    def _search_semantic_scholar(self, journal: str, min_date: datetime) -> List[Paper]:
+        """Semantic Scholar API를 사용하여 특정 저널의 논문을 검색합니다."""
+        try:
+            # Semantic Scholar API 엔드포인트
+            base_url = "https://api.semanticscholar.org/graph/v1/paper/search"
+            
+            # 검색 쿼리 구성 (더 간단한 형식으로 변경)
+            query = journal  # venue: 제거하고 저널명만 사용
+            
+            params = {
+                'query': query,
+                'limit': 50,  # 제한을 줄여서 안정성 향상
+                'fields': 'paperId,title,authors,year,venue,citationCount,abstract,isOpenAccess,openAccessPdf,externalIds'
+            }
+            
+            logger.info(f"Semantic Scholar API 요청: {params}")
+            
+            # User-Agent 헤더 추가
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            
+            response = requests.get(base_url, params=params, headers=headers, timeout=30)
+            logger.info(f"API 응답 상태: {response.status_code}")
+            
+            if response.status_code != 200:
+                logger.error(f"API 요청 실패: {response.status_code} - {response.text}")
+                return []
+            
+            response.raise_for_status()
+            
+            data = response.json()
+            logger.info(f"API 응답 데이터: {len(data.get('data', []))}개 논문 발견")
+            
+            papers = []
+            
+            for paper_data in data.get('data', []):
+                try:
+                    # 논문이 해당 저널에서 나온 것인지 확인
+                    paper_venue = paper_data.get('venue', '').lower()
+                    journal_lower = journal.lower()
+                    
+                    # 저널명이 venue에 포함되어 있는지 확인
+                    if journal_lower not in paper_venue and not any(word in paper_venue for word in journal_lower.split()):
+                        continue
+                    
+                    # 모든 연도의 논문을 가져온 후 나중에 필터링
+                    paper_year = paper_data.get('year', 0)
+                    
+                    # arXiv ID가 있는지 확인
+                    arxiv_id = None
+                    external_ids = paper_data.get('externalIds', {})
+                    if external_ids:
+                        arxiv_id = external_ids.get('ArXiv')
+                    
+                    # 저자 정보 추출
+                    authors = []
+                    for author in paper_data.get('authors', []):
+                        if author.get('name'):
+                            authors.append(author['name'])
+                    
+                    # PDF URL 생성 (arXiv 우선, 그 다음 openAccessPdf)
+                    pdf_url = ""
+                    if arxiv_id:
+                        pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+                    elif paper_data.get('openAccessPdf', {}).get('url'):
+                        pdf_url = paper_data['openAccessPdf']['url']
+                    
+                    # arXiv URL 생성
+                    arxiv_url = f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else ""
+                    
+                    # 발표일 처리 (year만 사용)
+                    published_date = f"{paper_year}-01-01T00:00:00Z"
+                    updated_date = f"{paper_year}-01-01T00:00:00Z"
+                    
+                    # Paper 객체 생성
+                    paper = Paper(
+                        id=paper_data.get('paperId', ''),
+                        title=paper_data.get('title', 'No Title'),
+                        authors=authors,
+                        published_date=published_date,
+                        updated_date=updated_date,
+                        abstract=paper_data.get('abstract', ''),
+                        categories=[journal],  # 저널명을 카테고리로 사용
+                        pdf_url=pdf_url,
+                        arxiv_url=arxiv_url,
+                        citation_count=paper_data.get('citationCount', 0),
+                        relevance_score=0.0
+                    )
+                    
+                    papers.append(paper)
+                    
+                except Exception as e:
+                    logger.warning(f"논문 파싱 중 오류: {e}")
+                    continue
+            
+            logger.info(f"저널 '{journal}'에서 {len(papers)}편의 논문을 찾았습니다.")
+            return papers
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Semantic Scholar API 요청 실패: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Semantic Scholar 검색 중 오류: {e}")
+            return []
+    
+    def _search_arxiv_by_title(self, title: str) -> Optional[Paper]:
+        """제목으로 arXiv에서 논문을 검색합니다."""
+        try:
+            # arXiv API 검색 쿼리 구성
+            search_query = f'ti:"{title}"'
+            
+            params = {
+                'search_query': search_query,
+                'start': 0,
+                'max_results': 5,  # 최대 5개 결과
+                'sortBy': 'relevance',
+                'sortOrder': 'descending'
+            }
+            
+            logger.info(f"arXiv 제목 검색: {search_query}")
+            
+            # arXiv API 요청
+            response = requests.get(self.base_url, params=params, timeout=30)
+            response.raise_for_status()
+            
+            # XML 파싱
+            from xml.etree import ElementTree as ET
+            root = ET.fromstring(response.content)
+            
+            # 네임스페이스 정의
+            ns = {
+                'atom': 'http://www.w3.org/2005/Atom',
+                'arxiv': 'http://arxiv.org/schemas/atom'
+            }
+            
+            entries = root.findall('atom:entry', ns)
+            
+            # 가장 관련성 높은 논문 반환
+            if entries:
+                paper = self._parse_arxiv_entry(entries[0], ns)
+                if paper:
+                    logger.info(f"arXiv에서 논문 발견: {paper.title}")
+                    return paper
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"arXiv 제목 검색 중 오류: {e}")
+            return None
     
     def _search_latest_papers(self, domain: str, max_results: int = 10) -> List[Paper]:
         """최신 논문을 검색합니다."""
@@ -268,6 +477,11 @@ class AXPressScholarAgent:
                 print(f"   발표일: {paper.published_date}")
             
             print(f"   카테고리: {', '.join(paper.categories[:3])}")
+            
+            # 인용수 표시 (Semantic Scholar에서 가져온 경우)
+            if paper.citation_count > 0:
+                print(f"   📊 인용수: {paper.citation_count}")
+            
             print(f"   PDF: [PDF Available] - {paper.pdf_url}")
             
             # 요약 미리보기 (첫 100자)
@@ -353,7 +567,9 @@ def main():
         agent = AXPressScholarAgent()
         print(f"\n🔍 '{selected_domain}' 도메인에서 논문을 검색합니다...")
         
-        papers = agent.fetch_papers(selected_domain)
+        # 새로운 기능: 고인용 논문 검색
+        print("📊 고인용 논문 검색 모드 (2년 내 인용수 기준)")
+        papers = agent.fetch_highly_cited_papers(selected_domain)
         
         if not papers:
             print("검색된 논문이 없습니다.")
@@ -394,6 +610,9 @@ def main():
     except Exception as e:
         logger.error(f"프로그램 실행 중 오류: {e}")
         print(f"❌ 오류가 발생했습니다: {e}")
+
+# final.py와 완전히 동일한 AXPressScholarAgent 클래스
+# 이제 final.py를 수정하지 않고도 동일한 기능을 사용할 수 있습니다.
 
 if __name__ == "__main__":
     main()
