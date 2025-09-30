@@ -1,0 +1,301 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Adding AX College design tokens as specified */
+:root {
+  /* AX College Brand Colors (hard fixed) */
+  --ax-bg-soft: #e6e6fa;
+  --ax-accent: #9a83c9;
+  --ax-fg: #000000;
+  --ax-surface: #ffffff;
+  --ax-border: #dad6ee;
+  --ax-helpdesk: #ff8c00;
+  --ax-toast-bg: #333333;
+  --ax-toast-fg: #ffffff;
+
+  /* Original shadcn tokens for compatibility */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --radius: 0.75rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+
+  /* Font variables and header height token */
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --header-height: 96px; /* 1.5x from 64px */
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.145 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.145 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.396 0.141 25.723);
+  --destructive-foreground: oklch(0.637 0.237 25.331);
+  --border: oklch(0.269 0 0);
+  --input: oklch(0.269 0 0);
+  --ring: oklch(0.439 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(0.269 0 0);
+  --sidebar-ring: oklch(0.439 0 0);
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  /* Updated font family to use CSS variables properly */
+  html {
+    font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system;
+  }
+
+  .code,
+  pre,
+  code {
+    font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  /* Apply AX College brand styling to body */
+  body {
+    background: var(--ax-bg-soft);
+    color: var(--ax-fg);
+    font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans KR", "Apple SD Gothic Neo",
+      sans-serif;
+    /* Improved mobile text rendering */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Better mobile touch targets */
+  @media (max-width: 768px) {
+    button,
+    a,
+    [role="button"] {
+      min-height: 44px;
+      min-width: 44px;
+    }
+  }
+}
+
+/* AX College specific component styles */
+@layer components {
+  .ax-header {
+    background: var(--ax-surface);
+    border-bottom: 1px solid var(--ax-border);
+    backdrop-filter: blur(10px);
+    height: var(--header-height);
+  }
+
+  .ax-nav-link {
+    color: var(--ax-fg);
+    transition: all 200ms ease;
+  }
+
+  .ax-nav-link.active {
+    box-shadow: inset 0 -2px 0 0 var(--ax-accent);
+  }
+
+  .ax-nav-link:hover {
+    color: var(--ax-accent);
+  }
+
+  .ax-button-primary {
+    background: var(--ax-accent);
+    color: var(--ax-fg);
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+    /* Better mobile button styling */
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .ax-button-primary:hover {
+    background: color-mix(in srgb, var(--ax-accent) 90%, black);
+  }
+
+  .ax-card {
+    background: var(--ax-surface);
+    border: 1px solid var(--ax-border);
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  }
+
+  .ax-focus-ring:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(154, 131, 201, 0.35);
+  }
+
+  .ax-helpdesk-icon {
+    color: var(--ax-helpdesk);
+  }
+
+  .ax-toast {
+    background: var(--ax-toast-bg);
+    color: var(--ax-toast-fg);
+  }
+
+  /* Mobile-specific improvements */
+  @media (max-width: 768px) {
+    .ax-card {
+      border-radius: 8px;
+      box-shadow: 0 1px 8px rgba(0, 0, 0, 0.04);
+    }
+
+    .ax-button-primary {
+      border-radius: 8px;
+      font-size: 0.875rem;
+      padding: 0.75rem 1rem;
+    }
+
+    /* Better mobile form inputs */
+    input,
+    textarea,
+    select {
+      font-size: 16px; /* Prevents zoom on iOS */
+    }
+  }
+
+  /* Improved animations for mobile */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  /* Better mobile scrolling */
+  @supports (-webkit-overflow-scrolling: touch) {
+    .overflow-y-auto,
+    .overflow-x-auto,
+    .overflow-auto {
+      -webkit-overflow-scrolling: touch;
+    }
+  }
+}
+
+/* Mobile-first responsive utilities */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .text-pretty {
+    text-wrap: pretty;
+  }
+
+  /* Safe area insets for mobile devices */
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .safe-left {
+    padding-left: env(safe-area-inset-left);
+  }
+
+  .safe-right {
+    padding-right: env(safe-area-inset-right);
+  }
+}
