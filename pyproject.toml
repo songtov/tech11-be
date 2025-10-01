@@ -38,6 +38,7 @@ extend-exclude = ["legacy"]
 shell = "black . && isort . && ruff check ."
 
 [tool.poe.tasks.test]
+
 cmd = "pytest -v --cov=. --cov-report=term --cov-report=html:htmlcov"
 
 [tool.poe.tasks.watch-test]
