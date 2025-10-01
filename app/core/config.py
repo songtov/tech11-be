@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from typing import Optional
+
 
 class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
@@ -17,9 +17,9 @@ class Settings(BaseSettings):
     AOAI_DEPLOY_EMBED_3_SMALL: str = "text-embedding-3-small"
     AOAI_DEPLOY_EMBED_ADA: str = "text-embedding-ada-002"
 
-
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+
 
 settings = Settings()
