@@ -63,7 +63,7 @@ class AXPressScholarAgent:
             "CLOUD": ["IEEE Transactions on Cloud Computing", "Springer Journal of Cloud Computing", "Science"]
         }
         
-        # arXiv 카테고리 매핑 (더 정확한 검색을 위해)
+        # arXiv 카테고리 매핑 (더 정확한 검색을 위해1)
         self.arxiv_categories = {
             "제조": ["cs.RO", "cs.SY", "eess.SY"],  # Robotics, Systems, Control Systems
             "금융": ["q-fin.GN", "q-fin.CP", "econ.GN"],  # General Finance, Computational Finance
