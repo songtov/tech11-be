@@ -1,6 +1,6 @@
 import os
-import sys
 from logging.config import fileConfig
+import sys
 
 from sqlalchemy import engine_from_config, pool
 
