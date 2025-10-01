@@ -18,13 +18,11 @@ A FastAPI-based backend server built with modern Python tooling and best practic
 
 ### Installing uv
 
-```bash
-# On Windows (PowerShell)
-powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+Search in Internet!
 
-# On macOS/Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
+### Installing poe the poet
+
+Serath in Internet!
 
 ## Quick Start
 
@@ -44,7 +42,7 @@ uv sync
 ### 3. Run the Development Server
 
 ```bash
-uv run poe run
+poe run
 ```
 
 The server will start at `http://localhost:8000` with hot reload enabled.
@@ -81,16 +79,16 @@ The project uses [poethepoet](https://poethepoet.natn.io/) for task management:
 
 ```bash
 # Run the development server
-uv run poe run
+poe run
 
 # Run tests with coverage
-uv run poe test
+poe test
 
 # Run tests in watch mode
-uv run poe watch-test
+poe watch-test
 
 # Format and lint code
-uv run poe lint
+poe lint
 ```
 
 ### Code Quality
@@ -107,7 +105,7 @@ The project includes several tools for maintaining code quality:
 
 ```bash
 # Run all tests
-uv run poe test
+poe test
 
 # Run tests in watch mode (reruns on file changes)
 uv run poe watch-test
@@ -120,23 +118,14 @@ uv run pytest
 
 ```bash
 # Format and lint all code
-uv run poe lint
-
-# Run individual tools
-uv run black .
-uv run isort .
-uv run ruff check .
+ poe lint
 ```
 
 ## Environment Variables
 
 Create a `.env` file in the project root for environment-specific configuration:
+Ask college
 
-```bash
-# Example .env file
-DEBUG=true
-LOG_LEVEL=info
-```
 
 ## Production Deployment
 
@@ -178,7 +167,7 @@ CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "800
 
 ## Contributing
 
-1. Fork the repository
+1. Clone the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes
 4. Run tests and linting (`uv run poe test && uv run poe lint`)
@@ -186,9 +175,6 @@ CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "800
 6. Push to the branch (`git push origin feature/amazing-feature`)
 7. Open a Pull Request
 
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Support
 
