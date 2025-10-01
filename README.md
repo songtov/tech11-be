@@ -39,7 +39,14 @@ cd tech11-be
 uv sync
 ```
 
-### 3. Run the Development Server
+### 3. Set Up Database
+
+```bash
+# Apply database migrations
+uv run alembic upgrade head
+```
+
+### 4. Run the Development Server
 
 ```bash
 poe run
