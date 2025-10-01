@@ -25,11 +25,7 @@ dev = [
 
 
 [tool.black]
-extend-exclude = '''
-/(
-  legacy/
-)/
-'''
+extend-exclude = "legacy/"
 
 [tool.isort]
 extend_skip_glob = ["legacy/*"]
