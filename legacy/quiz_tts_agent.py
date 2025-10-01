@@ -9,6 +9,7 @@ from typing import List, Dict, Any
 # 1. 환경변수 로드 (.env 사용)
 # =====================================================================
 from dotenv import load_dotenv
+
 load_dotenv()  # .env 파일 읽기
 
 # =====================================================================
@@ -21,7 +22,8 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import AzureOpenAIEmbeddings, AzureChatOpenAI
 
-from gtts import gTTS   # Google Text-to-Speech
+from gtts import gTTS  # Google Text-to-Speech
+
 
 # =====================================================================
 # 3. 특수기호 제거 함수
@@ -62,7 +64,11 @@ class PDFQuizSystem:
     def get_llm(self, temperature: float = 0.2, use_mini: bool = True):
         return AzureChatOpenAI(
             openai_api_version="2024-02-01",
-            azure_deployment=os.getenv("AOAI_DEPLOY_GPT4O_MINI") if use_mini else os.getenv("AOAI_DEPLOY_GPT4O"),
+            azure_deployment=(
+                os.getenv("AOAI_DEPLOY_GPT4O_MINI")
+                if use_mini
+                else os.getenv("AOAI_DEPLOY_GPT4O")
+            ),
             temperature=temperature,
             api_key=os.getenv("AOAI_API_KEY"),
             azure_endpoint=os.getenv("AOAI_ENDPOINT"),
@@ -99,7 +105,9 @@ class PDFQuizSystem:
     # 벡터스토어 구축
     # ------------------------
     def build_vectorstore(self, docs, chunk_size=1000, chunk_overlap=200):
-        splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap
+        )
         splits = splitter.split_documents(docs)
 
         for d in splits:
@@ -116,7 +124,9 @@ class PDFQuizSystem:
     # 1차 에이전트: 요약
     # ------------------------
     def generate_summary(self, vectorstore):
-        chunks = vectorstore.similarity_search("summary overview of this document", k=12)
+        chunks = vectorstore.similarity_search(
+            "summary overview of this document", k=12
+        )
         document_content = "\n\n".join([c.page_content for c in chunks])
 
         summary_prompt = """
@@ -145,7 +155,9 @@ class PDFQuizSystem:
     # 2차 에이전트: 퀴즈
     # ------------------------
     def generate_quiz(self, vectorstore):
-        chunks = vectorstore.similarity_search("Generate exam questions based on this document", k=10)
+        chunks = vectorstore.similarity_search(
+            "Generate exam questions based on this document", k=10
+        )
         document_content = "\n\n".join([c.page_content for c in chunks])
 
         quiz_prompt = """
@@ -173,7 +185,9 @@ class PDFQuizSystem:
     # 3차 에이전트: 산업 적용 해설
     # ------------------------
     def generate_industry_explainer(self, vectorstore):
-        chunks = vectorstore.similarity_search("detailed explanation with industry applications", k=15)
+        chunks = vectorstore.similarity_search(
+            "detailed explanation with industry applications", k=15
+        )
         document_content = "\n\n".join([c.page_content for c in chunks])
 
         explainer_prompt = """
@@ -252,7 +266,9 @@ class PDFQuizSystem:
         self.export_podcast(self.explainer, f"industry_explainer_{timestamp}.mp3")
 
         print("\n🎉 모든 작업 완료!")
-        print(f"📁 결과 저장: summary_{timestamp}.txt, quiz_{timestamp}.txt, explainer_{timestamp}.txt, industry_explainer_{timestamp}.mp3")
+        print(
+            f"📁 결과 저장: summary_{timestamp}.txt, quiz_{timestamp}.txt, explainer_{timestamp}.txt, industry_explainer_{timestamp}.mp3"
+        )
         return True
 
 

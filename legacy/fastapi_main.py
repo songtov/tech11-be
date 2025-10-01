@@ -18,6 +18,7 @@ from typing import List, Optional, Dict, Any, TypedDict
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 # FastAPI 및 관련 라이브러리
@@ -46,12 +47,16 @@ from langgraph.graph import StateGraph, END
 # TTS
 from gtts import gTTS
 
+
 # ==========================
 # Pydantic 모델들 (API 요청/응답)
 # ==========================
 class DomainRequest(BaseModel):
-    domain: str = Field(..., description="검색할 도메인 (제조, 금융, CLOUD, 통신, 유통/물류, Gen AI)")
+    domain: str = Field(
+        ..., description="검색할 도메인 (제조, 금융, CLOUD, 통신, 유통/물류, Gen AI)"
+    )
     additional_keywords: Optional[str] = Field(None, description="추가 검색 키워드")
+
 
 class PaperResponse(BaseModel):
     id: str
@@ -66,16 +71,20 @@ class PaperResponse(BaseModel):
     citation_count: int = 0
     relevance_score: float = 0.0
 
+
 class DownloadRequest(BaseModel):
     paper_index: int = Field(..., ge=0, description="다운로드할 논문 인덱스")
 
+
 class MultiAgentRequest(BaseModel):
     pdf_path: str = Field(..., description="분석할 PDF 파일 경로")
+
 
 class WorkflowRequest(BaseModel):
     domain: str = Field(..., description="검색할 도메인")
     additional_keywords: Optional[str] = Field(None, description="추가 검색 키워드")
     paper_index: int = Field(0, ge=0, description="다운로드할 논문 인덱스")
+
 
 class WorkflowResponse(BaseModel):
     success: bool
@@ -85,6 +94,7 @@ class WorkflowResponse(BaseModel):
     downloaded_pdf: Optional[str] = None
     results: Optional[Dict[str, Any]] = None
 
+
 class StatusResponse(BaseModel):
     workflow_id: str
     status: str
@@ -92,6 +102,7 @@ class StatusResponse(BaseModel):
     current_step: str
     message: str
     results: Optional[Dict[str, Any]] = None
+
 
 class MultiAgentResponse(BaseModel):
     success: bool
@@ -102,6 +113,7 @@ class MultiAgentResponse(BaseModel):
     figure_analysis: Optional[str] = None
     tts_file: Optional[str] = None
 
+
 # ==========================
 # 유틸: 텍스트 정리(TTS용)
 # ==========================
@@ -109,6 +121,7 @@ def clean_text(text: str) -> str:
     cleaned = re.sub(r"[#*>•\-]+", " ", text)
     cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned.strip()
+
 
 # ==========================
 # LLM / Embeddings 팩토리
@@ -126,6 +139,7 @@ def build_llm(use_mini: bool = True, temperature: float = 0.2):
         temperature=temperature,
     )
 
+
 def build_embeddings():
     return AzureOpenAIEmbeddings(
         model=os.getenv("AOAI_DEPLOY_EMBED_3_LARGE"),
@@ -133,6 +147,7 @@ def build_embeddings():
         api_key=os.getenv("AOAI_API_KEY"),
         azure_endpoint=os.getenv("AOAI_ENDPOINT"),
     )
+
 
 # ==========================
 # PDF 로드 & 벡터스토어 구축
@@ -152,6 +167,7 @@ def load_pdf(path_or_url: str) -> List[Document]:
         docs = loader.load()
     return docs
 
+
 def build_vectorstore(
     docs: List[Document],
     embeddings,
@@ -169,6 +185,7 @@ def build_vectorstore(
         d.page_content = prefix + d.page_content
     vs = FAISS.from_documents(splits, embeddings)
     return vs
+
 
 # ==========================
 # 체인: 요약 / 퀴즈 / 해설 / 판정
@@ -191,6 +208,7 @@ def make_summary_chain():
     )
     return prompt | build_llm(use_mini=True) | StrOutputParser()
 
+
 def make_quiz_chain():
     prompt = PromptTemplate.from_template(
         """당신은 논문 기반 퀴즈 제작자입니다. 다음 조건을 만족하는 한국어 퀴즈를 작성하세요.
@@ -206,6 +224,7 @@ def make_quiz_chain():
     )
     return prompt | build_llm(use_mini=True) | StrOutputParser()
 
+
 def make_explainer_chain():
     prompt = PromptTemplate.from_template(
         """당신은 전문 해설가입니다. 아래 문서를 바탕으로 한국어 해설 스크립트를 작성하세요.
@@ -220,6 +239,7 @@ def make_explainer_chain():
 """
     )
     return prompt | build_llm(use_mini=False) | StrOutputParser()
+
 
 def make_figure_analysis_chain():
     prompt = PromptTemplate.from_template(
@@ -238,6 +258,7 @@ def make_figure_analysis_chain():
     )
     return prompt | build_llm(use_mini=False) | StrOutputParser()
 
+
 def make_judge_chain():
     prompt = PromptTemplate.from_template(
         """다음 생성물의 품질을 평가하세요.
@@ -252,6 +273,7 @@ def make_judge_chain():
 """
     )
     return prompt | build_llm(use_mini=False, temperature=0.0) | StrOutputParser()
+
 
 # ==========================
 # 상태 정의 (LangGraph State)
@@ -277,6 +299,7 @@ class AgentState(TypedDict, total=False):
     judge_explainer_ok: bool
     judge_figure_analysis_ok: bool
 
+
 # ==========================
 # 그래프 노드 함수들
 # ==========================
@@ -291,6 +314,7 @@ def node_summarizer(state: AgentState) -> AgentState:
     summary = summary_chain.invoke({"document_content": content})
     return {"summary": summary}
 
+
 def node_quiz(state: AgentState) -> AgentState:
     vs = state["vectorstore"]
     k = state.get("k", 10)
@@ -302,13 +326,12 @@ def node_quiz(state: AgentState) -> AgentState:
     quiz = quiz_chain.invoke({"document_content": content})
     return {"quiz": quiz}
 
+
 def node_explainer(state: AgentState) -> AgentState:
     vs = state["vectorstore"]
     k = state.get("k", 15)
     chunks = vs.similarity_search(
-        state.get(
-            "query_explainer", "detailed explanation with industry applications"
-        ),
+        state.get("query_explainer", "detailed explanation with industry applications"),
         k=k,
     )
     content = "\n\n".join([c.page_content for c in chunks])
@@ -316,20 +339,24 @@ def node_explainer(state: AgentState) -> AgentState:
     explainer = explainer_chain.invoke({"document_content": content})
     return {"explainer": explainer}
 
+
 def node_judge_summary(state: AgentState) -> AgentState:
     judge = make_judge_chain()
     verdict = judge.invoke({"generated": state.get("summary", "")}).strip().upper()
     return {"judge_summary_ok": verdict.startswith("YES")}
+
 
 def node_judge_quiz(state: AgentState) -> AgentState:
     judge = make_judge_chain()
     verdict = judge.invoke({"generated": state.get("quiz", "")}).strip().upper()
     return {"judge_quiz_ok": verdict.startswith("YES")}
 
+
 def node_judge_explainer(state: AgentState) -> AgentState:
     judge = make_judge_chain()
     verdict = judge.invoke({"generated": state.get("explainer", "")}).strip().upper()
     return {"judge_explainer_ok": verdict.startswith("YES")}
+
 
 def cond_on_summary(state: AgentState) -> str:
     if state.get("judge_summary_ok", True):
@@ -338,12 +365,14 @@ def cond_on_summary(state: AgentState) -> str:
     state["k"] = new_k
     return "retry"
 
+
 def cond_on_quiz(state: AgentState) -> str:
     if state.get("judge_quiz_ok", True):
         return "ok"
     new_k = min(40, state.get("k", 12) + 4)
     state["k"] = new_k
     return "retry"
+
 
 def cond_on_explainer(state: AgentState) -> str:
     if state.get("judge_explainer_ok", True):
@@ -352,21 +381,29 @@ def cond_on_explainer(state: AgentState) -> str:
     state["k"] = new_k
     return "retry"
 
+
 def node_figure_analysis(state: AgentState) -> AgentState:
     vs = state["vectorstore"]
     k = state.get("k", 12)
     chunks = vs.similarity_search(
-        state.get("query_figure_analysis", "figure analysis and visualization interpretation"), k=k
+        state.get(
+            "query_figure_analysis", "figure analysis and visualization interpretation"
+        ),
+        k=k,
     )
     content = "\n\n".join([c.page_content for c in chunks])
     figure_analysis_chain = make_figure_analysis_chain()
     figure_analysis = figure_analysis_chain.invoke({"document_content": content})
     return {"figure_analysis": figure_analysis}
 
+
 def node_judge_figure_analysis(state: AgentState) -> AgentState:
     judge = make_judge_chain()
-    verdict = judge.invoke({"generated": state.get("figure_analysis", "")}).strip().upper()
+    verdict = (
+        judge.invoke({"generated": state.get("figure_analysis", "")}).strip().upper()
+    )
     return {"judge_figure_analysis_ok": verdict.startswith("YES")}
+
 
 def cond_on_figure_analysis(state: AgentState) -> str:
     if state.get("judge_figure_analysis_ok", True):
@@ -374,6 +411,7 @@ def cond_on_figure_analysis(state: AgentState) -> str:
     new_k = min(40, state.get("k", 12) + 4)
     state["k"] = new_k
     return "retry"
+
 
 def node_tts(state: AgentState) -> AgentState:
     script = state.get("explainer", "")
@@ -386,6 +424,7 @@ def node_tts(state: AgentState) -> AgentState:
     tts.save(out_mp3)
     print(f"🎧 TTS 저장 완료: {out_mp3}")
     return {}
+
 
 # ==========================
 # 워크플로우 구성 (LangGraph)
@@ -456,6 +495,7 @@ def build_workflow():
 
     return graph.compile()
 
+
 # ==========================
 # 실행 함수
 # ==========================
@@ -484,7 +524,7 @@ def run_multi_agent(pdf_path_or_url: str):
     # 산출물 저장
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     results = {}
-    
+
     if final_state.get("summary"):
         with open(f"summary_{ts}.txt", "w", encoding="utf-8") as f:
             f.write(final_state["summary"])
@@ -512,6 +552,7 @@ def run_multi_agent(pdf_path_or_url: str):
     print("🎉 모든 작업 완료!")
     return results
 
+
 # ==========================
 # FastAPI 앱 초기화
 # ==========================
@@ -525,17 +566,19 @@ SUPPORTED_DOMAINS = ["제조", "금융", "CLOUD", "통신", "유통/물류", "Ge
 
 from contextlib import asynccontextmanager
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """앱 생명주기 관리"""
     # 시작 시 실행
     downloaded_papers_dir.mkdir(exist_ok=True)
     print("FastAPI 앱이 시작되었습니다.")
-    
+
     yield
-    
+
     # 종료 시 실행
     print("FastAPI 앱이 종료되었습니다.")
+
 
 # FastAPI 앱에 lifespan 추가
 app = FastAPI(
@@ -544,7 +587,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # CORS 미들웨어 추가
@@ -555,6 +598,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # ==========================
 # FastAPI 엔드포인트들
@@ -572,17 +616,16 @@ async def root():
             "PDF 다운로드",
             "멀티에이전트 기반 요약/퀴즈/해설 생성",
             "품질 검증 시스템",
-            "TTS 팟캐스트 생성"
-        ]
+            "TTS 팟캐스트 생성",
+        ],
     }
+
 
 @app.get("/domains")
 async def get_supported_domains():
     """지원되는 도메인 목록 반환"""
-    return {
-        "domains": SUPPORTED_DOMAINS,
-        "count": len(SUPPORTED_DOMAINS)
-    }
+    return {"domains": SUPPORTED_DOMAINS, "count": len(SUPPORTED_DOMAINS)}
+
 
 @app.post("/search/papers", response_model=List[PaperResponse])
 async def search_papers(request: DomainRequest):
@@ -590,43 +633,48 @@ async def search_papers(request: DomainRequest):
     try:
         if request.domain not in SUPPORTED_DOMAINS:
             raise HTTPException(
-                status_code=400, 
-                detail=f"지원하지 않는 도메인입니다. 지원 도메인: {SUPPORTED_DOMAINS}"
+                status_code=400,
+                detail=f"지원하지 않는 도메인입니다. 지원 도메인: {SUPPORTED_DOMAINS}",
             )
-        
+
         print(f"논문 검색 시작: 도메인={request.domain}")
-        
+
         # 논문 검색 (실제 모델 사용)
         papers = scholar_agent.fetch_papers(request.domain)
-        
+
         if not papers:
             raise HTTPException(status_code=404, detail="검색된 논문이 없습니다.")
-        
+
         # Paper 객체를 PaperResponse로 변환
         paper_responses = []
         for paper in papers:
-            paper_responses.append(PaperResponse(
-                id=paper.id,
-                title=paper.title,
-                authors=paper.authors,
-                published_date=paper.published_date,
-                updated_date=paper.updated_date,
-                abstract=paper.abstract,
-                categories=paper.categories,
-                pdf_url=paper.pdf_url,
-                arxiv_url=paper.arxiv_url,
-                citation_count=paper.citation_count,
-                relevance_score=paper.relevance_score
-            ))
-        
+            paper_responses.append(
+                PaperResponse(
+                    id=paper.id,
+                    title=paper.title,
+                    authors=paper.authors,
+                    published_date=paper.published_date,
+                    updated_date=paper.updated_date,
+                    abstract=paper.abstract,
+                    categories=paper.categories,
+                    pdf_url=paper.pdf_url,
+                    arxiv_url=paper.arxiv_url,
+                    citation_count=paper.citation_count,
+                    relevance_score=paper.relevance_score,
+                )
+            )
+
         print(f"논문 검색 완료: {len(paper_responses)}편 발견")
         return paper_responses
-        
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"논문 검색 오류: {e}")
-        raise HTTPException(status_code=500, detail=f"논문 검색 중 오류가 발생했습니다: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"논문 검색 중 오류가 발생했습니다: {str(e)}"
+        )
+
 
 @app.post("/download/pdf")
 async def download_pdf(request: DownloadRequest, papers_data: List[PaperResponse]):
@@ -634,12 +682,12 @@ async def download_pdf(request: DownloadRequest, papers_data: List[PaperResponse
     try:
         if request.paper_index >= len(papers_data):
             raise HTTPException(
-                status_code=400, 
-                detail=f"잘못된 논문 인덱스입니다. 0-{len(papers_data)-1} 범위에서 선택해주세요."
+                status_code=400,
+                detail=f"잘못된 논문 인덱스입니다. 0-{len(papers_data)-1} 범위에서 선택해주세요.",
             )
-        
+
         selected_paper_data = papers_data[request.paper_index]
-        
+
         # Paper 객체 생성 (실제 모델 구조에 맞게)
         paper = Paper(
             id=selected_paper_data.id,
@@ -652,46 +700,51 @@ async def download_pdf(request: DownloadRequest, papers_data: List[PaperResponse
             pdf_url=selected_paper_data.pdf_url,
             arxiv_url=selected_paper_data.arxiv_url,
             citation_count=selected_paper_data.citation_count,
-            relevance_score=selected_paper_data.relevance_score
+            relevance_score=selected_paper_data.relevance_score,
         )
-        
+
         print(f"PDF 다운로드 시작: {paper.title}")
-        
+
         # PDF 다운로드 (실제 모델 사용)
         filepath = scholar_agent.download_pdf(paper)
-        
+
         if not filepath:
             raise HTTPException(status_code=500, detail="PDF 다운로드에 실패했습니다.")
-        
+
         print(f"PDF 다운로드 완료: {filepath}")
-        
+
         return {
             "success": True,
             "message": "PDF 다운로드가 완료되었습니다.",
             "filepath": filepath,
-            "filename": os.path.basename(filepath)
+            "filename": os.path.basename(filepath),
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"PDF 다운로드 오류: {e}")
-        raise HTTPException(status_code=500, detail=f"PDF 다운로드 중 오류가 발생했습니다: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"PDF 다운로드 중 오류가 발생했습니다: {str(e)}"
+        )
+
 
 @app.post("/multiagent/process", response_model=MultiAgentResponse)
 async def process_with_multiagent(request: MultiAgentRequest):
     """멀티에이전트 시스템으로 PDF 처리 (main.py의 run_quiz_agent 기능)"""
     try:
         if not os.path.exists(request.pdf_path):
-            raise HTTPException(status_code=404, detail="지정된 PDF 파일을 찾을 수 없습니다.")
-        
+            raise HTTPException(
+                status_code=404, detail="지정된 PDF 파일을 찾을 수 없습니다."
+            )
+
         print(f"멀티에이전트 처리 시작: {request.pdf_path}")
-        
+
         # 멀티에이전트 시스템 실행
         results = run_multi_agent(request.pdf_path)
-        
+
         print("멀티에이전트 처리 완료")
-        
+
         return MultiAgentResponse(
             success=True,
             message="멀티에이전트 처리가 완료되었습니다.",
@@ -699,135 +752,161 @@ async def process_with_multiagent(request: MultiAgentRequest):
             quiz=results.get("quiz"),
             explainer=results.get("explainer"),
             figure_analysis=results.get("figure_analysis"),
-            tts_file=f"industry_explainer_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp3"
+            tts_file=f"industry_explainer_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp3",
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"멀티에이전트 처리 오류: {e}")
-        raise HTTPException(status_code=500, detail=f"멀티에이전트 처리 중 오류가 발생했습니다: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"멀티에이전트 처리 중 오류가 발생했습니다: {str(e)}",
+        )
+
 
 @app.post("/workflow/start", response_model=WorkflowResponse)
 async def start_workflow(request: WorkflowRequest, background_tasks: BackgroundTasks):
     """전체 워크플로우 시작 (main.py의 run_automatic_workflow 기능)"""
     try:
         workflow_id = f"workflow_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        
+
         # 워크플로우 상태 초기화
         workflow_status[workflow_id] = {
             "status": "started",
             "progress": 0,
             "current_step": "논문 검색",
             "message": "워크플로우가 시작되었습니다.",
-            "results": {}
+            "results": {},
         }
-        
+
         # 백그라운드에서 워크플로우 실행
         background_tasks.add_task(
-            execute_workflow, 
-            workflow_id, 
-            request.domain, 
+            execute_workflow,
+            workflow_id,
+            request.domain,
             request.additional_keywords,
-            request.paper_index
+            request.paper_index,
         )
-        
+
         return WorkflowResponse(
             success=True,
             message="워크플로우가 시작되었습니다.",
             workflow_id=workflow_id,
             papers=[],
             downloaded_pdf=None,
-            results=None
+            results=None,
         )
-        
+
     except Exception as e:
         print(f"워크플로우 시작 오류: {e}")
-        raise HTTPException(status_code=500, detail=f"워크플로우 시작 중 오류가 발생했습니다: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"워크플로우 시작 중 오류가 발생했습니다: {str(e)}"
+        )
 
-async def execute_workflow(workflow_id: str, domain: str, additional_keywords: Optional[str], paper_index: int):
+
+async def execute_workflow(
+    workflow_id: str, domain: str, additional_keywords: Optional[str], paper_index: int
+):
     """백그라운드에서 워크플로우 실행 (실제 모델 사용)"""
     try:
         # 1단계: 논문 검색 (실제 모델 사용)
-        workflow_status[workflow_id].update({
-            "status": "running",
-            "progress": 20,
-            "current_step": "논문 검색",
-            "message": f"'{domain}' 도메인에서 논문을 검색하고 있습니다..."
-        })
-        
-        papers = scholar_agent.fetch_papers(domain)
-        
-        if not papers:
-            workflow_status[workflow_id].update({
-                "status": "failed",
-                "progress": 0,
+        workflow_status[workflow_id].update(
+            {
+                "status": "running",
+                "progress": 20,
                 "current_step": "논문 검색",
-                "message": "검색된 논문이 없습니다."
-            })
+                "message": f"'{domain}' 도메인에서 논문을 검색하고 있습니다...",
+            }
+        )
+
+        papers = scholar_agent.fetch_papers(domain)
+
+        if not papers:
+            workflow_status[workflow_id].update(
+                {
+                    "status": "failed",
+                    "progress": 0,
+                    "current_step": "논문 검색",
+                    "message": "검색된 논문이 없습니다.",
+                }
+            )
             return
-        
+
         # 2단계: PDF 다운로드 (실제 모델 사용)
-        workflow_status[workflow_id].update({
-            "progress": 40,
-            "current_step": "PDF 다운로드",
-            "message": f"논문 '{papers[paper_index].title}' PDF를 다운로드하고 있습니다..."
-        })
-        
-        filepath = scholar_agent.download_pdf(papers[paper_index])
-        
-        if not filepath:
-            workflow_status[workflow_id].update({
-                "status": "failed",
+        workflow_status[workflow_id].update(
+            {
                 "progress": 40,
                 "current_step": "PDF 다운로드",
-                "message": "PDF 다운로드에 실패했습니다."
-            })
-            return
-        
-        # 3단계: 멀티에이전트 처리 (실제 모델 사용)
-        workflow_status[workflow_id].update({
-            "progress": 60,
-            "current_step": "멀티에이전트 처리",
-            "message": "PDF를 분석하고 요약/퀴즈/해설을 생성하고 있습니다..."
-        })
-        
-        multiagent_results = run_multi_agent(filepath)
-        
-        # 완료
-        workflow_status[workflow_id].update({
-            "status": "completed",
-            "progress": 100,
-            "current_step": "완료",
-            "message": "전체 워크플로우가 완료되었습니다.",
-            "results": {
-                "papers_found": len(papers),
-                "downloaded_pdf": filepath,
-                "summary_generated": bool(multiagent_results.get("summary")),
-                "quiz_generated": bool(multiagent_results.get("quiz")),
-                "explainer_generated": bool(multiagent_results.get("explainer")),
-                "figure_analysis_generated": bool(multiagent_results.get("figure_analysis")),
-                "podcast_created": bool(multiagent_results.get("explainer")),
-                "multiagent_results": multiagent_results
+                "message": f"논문 '{papers[paper_index].title}' PDF를 다운로드하고 있습니다...",
             }
-        })
-        
+        )
+
+        filepath = scholar_agent.download_pdf(papers[paper_index])
+
+        if not filepath:
+            workflow_status[workflow_id].update(
+                {
+                    "status": "failed",
+                    "progress": 40,
+                    "current_step": "PDF 다운로드",
+                    "message": "PDF 다운로드에 실패했습니다.",
+                }
+            )
+            return
+
+        # 3단계: 멀티에이전트 처리 (실제 모델 사용)
+        workflow_status[workflow_id].update(
+            {
+                "progress": 60,
+                "current_step": "멀티에이전트 처리",
+                "message": "PDF를 분석하고 요약/퀴즈/해설을 생성하고 있습니다...",
+            }
+        )
+
+        multiagent_results = run_multi_agent(filepath)
+
+        # 완료
+        workflow_status[workflow_id].update(
+            {
+                "status": "completed",
+                "progress": 100,
+                "current_step": "완료",
+                "message": "전체 워크플로우가 완료되었습니다.",
+                "results": {
+                    "papers_found": len(papers),
+                    "downloaded_pdf": filepath,
+                    "summary_generated": bool(multiagent_results.get("summary")),
+                    "quiz_generated": bool(multiagent_results.get("quiz")),
+                    "explainer_generated": bool(multiagent_results.get("explainer")),
+                    "figure_analysis_generated": bool(
+                        multiagent_results.get("figure_analysis")
+                    ),
+                    "podcast_created": bool(multiagent_results.get("explainer")),
+                    "multiagent_results": multiagent_results,
+                },
+            }
+        )
+
         print(f"워크플로우 {workflow_id} 완료")
-        
+
     except Exception as e:
-        workflow_status[workflow_id].update({
-            "status": "failed",
-            "current_step": "오류",
-            "message": f"워크플로우 실행 중 오류가 발생했습니다: {str(e)}"
-        })
+        workflow_status[workflow_id].update(
+            {
+                "status": "failed",
+                "current_step": "오류",
+                "message": f"워크플로우 실행 중 오류가 발생했습니다: {str(e)}",
+            }
+        )
         print(f"워크플로우 {workflow_id} 실행 오류: {e}")
+
 
 @app.get("/workflow/status/{workflow_id}", response_model=StatusResponse)
 async def get_workflow_status(workflow_id: str):
     """워크플로우 상태 조회"""
     if workflow_id not in workflow_status:
         raise HTTPException(status_code=404, detail="워크플로우를 찾을 수 없습니다.")
-    
+
     status_data = workflow_status[workflow_id]
     return StatusResponse(
         workflow_id=workflow_id,
@@ -835,16 +914,15 @@ async def get_workflow_status(workflow_id: str):
         progress=status_data["progress"],
         current_step=status_data["current_step"],
         message=status_data["message"],
-        results=status_data.get("results")
+        results=status_data.get("results"),
     )
+
 
 @app.get("/workflow/list")
 async def list_workflows():
     """실행 중인 워크플로우 목록"""
-    return {
-        "workflows": list(workflow_status.keys()),
-        "count": len(workflow_status)
-    }
+    return {"workflows": list(workflow_status.keys()), "count": len(workflow_status)}
+
 
 @app.get("/papers/downloaded")
 async def get_downloaded_papers():
@@ -852,30 +930,32 @@ async def get_downloaded_papers():
     try:
         if not downloaded_papers_dir.exists():
             return {"papers": [], "count": 0}
-        
+
         pdf_files = list(downloaded_papers_dir.glob("*.pdf"))
         papers_info = []
-        
+
         for pdf_file in pdf_files:
             stat = pdf_file.stat()
-            papers_info.append({
-                "filename": pdf_file.name,
-                "filepath": str(pdf_file),
-                "size": stat.st_size,
-                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
-            })
-        
+            papers_info.append(
+                {
+                    "filename": pdf_file.name,
+                    "filepath": str(pdf_file),
+                    "size": stat.st_size,
+                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                }
+            )
+
         # 수정 시간 기준으로 정렬 (최신순)
         papers_info.sort(key=lambda x: x["modified"], reverse=True)
-        
-        return {
-            "papers": papers_info,
-            "count": len(papers_info)
-        }
-        
+
+        return {"papers": papers_info, "count": len(papers_info)}
+
     except Exception as e:
         print(f"다운로드된 논문 목록 조회 오류: {e}")
-        raise HTTPException(status_code=500, detail=f"논문 목록 조회 중 오류가 발생했습니다: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"논문 목록 조회 중 오류가 발생했습니다: {str(e)}"
+        )
+
 
 @app.get("/health")
 async def health_check():
@@ -884,30 +964,27 @@ async def health_check():
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "version": "1.0.0",
-        "features": "main.py 기반 멀티에이전트 논문 분석 시스템"
+        "features": "main.py 기반 멀티에이전트 논문 분석 시스템",
     }
+
 
 # 에러 핸들러
 @app.exception_handler(404)
 async def not_found_handler(request, exc):
     return JSONResponse(
-        status_code=404,
-        content={"detail": "요청한 리소스를 찾을 수 없습니다."}
+        status_code=404, content={"detail": "요청한 리소스를 찾을 수 없습니다."}
     )
+
 
 @app.exception_handler(500)
 async def internal_error_handler(request, exc):
     return JSONResponse(
-        status_code=500,
-        content={"detail": "내부 서버 오류가 발생했습니다."}
+        status_code=500, content={"detail": "내부 서버 오류가 발생했습니다."}
     )
+
 
 if __name__ == "__main__":
     # 개발 서버 실행
     uvicorn.run(
-        "fastapi_main:app",
-        host="127.0.0.1",
-        port=8000,
-        reload=True,
-        log_level="info"
+        "fastapi_main:app", host="127.0.0.1", port=8000, reload=True, log_level="info"
     )

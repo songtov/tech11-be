@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, TypedDict
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 # ========== LangChain / LangGraph ==========
@@ -223,9 +224,7 @@ def node_explainer(state: AgentState) -> AgentState:
     vs = state["vectorstore"]
     k = state.get("k", 15)
     chunks = vs.similarity_search(
-        state.get(
-            "query_explainer", "detailed explanation with industry applications"
-        ),
+        state.get("query_explainer", "detailed explanation with industry applications"),
         k=k,
     )
     content = "\n\n".join([c.page_content for c in chunks])

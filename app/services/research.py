@@ -1,5 +1,6 @@
-from sqlalchemy.orm import Session
 from typing import List, Optional
+
+from sqlalchemy.orm import Session
 
 from app.models.research import Research
 from app.schemas.research import ResearchCreate, ResearchUpdate
@@ -11,10 +12,7 @@ class ResearchService:
 
     def create_research(self, research: ResearchCreate) -> Research:
         """Create a new research entry"""
-        db_research = Research(
-            title=research.title,
-            abstract=research.abstract
-        )
+        db_research = Research(title=research.title, abstract=research.abstract)
         self.db.add(db_research)
         self.db.commit()
         self.db.refresh(db_research)
@@ -28,7 +26,9 @@ class ResearchService:
         """Get all research entries with pagination"""
         return self.db.query(Research).offset(skip).limit(limit).all()
 
-    def update_research(self, research_id: int, research_update: ResearchUpdate) -> Optional[Research]:
+    def update_research(
+        self, research_id: int, research_update: ResearchUpdate
+    ) -> Optional[Research]:
         """Update a research entry"""
         db_research = self.get_research(research_id)
         if not db_research:

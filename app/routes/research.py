@@ -1,15 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
 from typing import List
 
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
 from app.core.database import get_db
-from app.schemas.research import ResearchCreate, ResearchResponse, ResearchUpdate
+from app.schemas.research import (ResearchCreate, ResearchResponse,
+                                  ResearchUpdate)
 from app.services.research import ResearchService
 
 router = APIRouter()
 
 
-@router.post("/research", response_model=ResearchResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/research", response_model=ResearchResponse, status_code=status.HTTP_201_CREATED
+)
 def create_research(research: ResearchCreate, db: Session = Depends(get_db)):
     """Create a new research entry"""
     service = ResearchService(db)
@@ -23,8 +27,7 @@ def get_research(research_id: int, db: Session = Depends(get_db)):
     research = service.get_research(research_id)
     if not research:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Research not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Research not found"
         )
     return research
 
@@ -37,14 +40,15 @@ def get_all_research(skip: int = 0, limit: int = 100, db: Session = Depends(get_
 
 
 @router.put("/research/{research_id}", response_model=ResearchResponse)
-def update_research(research_id: int, research_update: ResearchUpdate, db: Session = Depends(get_db)):
+def update_research(
+    research_id: int, research_update: ResearchUpdate, db: Session = Depends(get_db)
+):
     """Update a research entry"""
     service = ResearchService(db)
     research = service.update_research(research_id, research_update)
     if not research:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Research not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Research not found"
         )
     return research
 
@@ -55,6 +59,5 @@ def delete_research(research_id: int, db: Session = Depends(get_db)):
     service = ResearchService(db)
     if not service.delete_research(research_id):
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Research not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail="Research not found"
         )

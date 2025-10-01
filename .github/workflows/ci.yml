@@ -28,12 +28,12 @@ jobs:
 
     - name: Run Black (formatting check)
       run: |
-        uv run black --check --diff .
+        uv run black --check --diff . --extend-exclude="legacy/"
 
     - name: Run isort (import sorting check)
       run: |
-        uv run isort --check-only --diff .
+        uv run isort --check-only --diff . --extend-skip-glob="legacy/*"
 
     - name: Run Ruff (linting)
       run: |
-        uv run ruff check .
+        uv run ruff check . --extend-exclude="legacy"

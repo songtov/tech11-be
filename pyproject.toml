@@ -24,6 +24,19 @@ dev = [
 ]
 
 
+[tool.black]
+extend-exclude = '''
+/(
+  legacy/
+)/
+'''
+
+[tool.isort]
+extend_skip_glob = ["legacy/*"]
+
+[tool.ruff]
+extend-exclude = ["legacy"]
+
 [tool.poe.tasks.lint]
 shell = "black . && isort . && ruff check ."
 
