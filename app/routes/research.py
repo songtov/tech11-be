@@ -4,8 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.research import (ResearchCreate, ResearchResponse,
-                                  ResearchUpdate)
+from app.schemas.research import ResearchCreate, ResearchResponse, ResearchUpdate
 from app.services.research import ResearchService
 
 router = APIRouter()

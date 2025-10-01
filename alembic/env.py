@@ -10,6 +10,7 @@ from alembic import context
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from app.core.config import settings
+
 # Import your models and database configuration
 from app.core.database import Base
 
