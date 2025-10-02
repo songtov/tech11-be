@@ -6,11 +6,11 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.research import (
     ResearchCreate,
+    ResearchDownload,
+    ResearchDownloadResponse,
     ResearchResponse,
     ResearchSearch,
     ResearchSearchResponse,
-    ResearchDownload,
-    ResearchDownloadResponse,
 )
 from app.services.research import ResearchService
 

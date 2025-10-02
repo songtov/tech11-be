@@ -1,7 +1,9 @@
 import logging
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Dict, List, Optional
 from xml.etree import ElementTree as ET
 
@@ -12,11 +14,11 @@ from app.models.research import Research
 from app.schemas.research import (
     DomainEnum,
     ResearchCreate,
+    ResearchDownload,
+    ResearchDownloadResponse,
     ResearchResponse,
     ResearchSearch,
     ResearchSearchResponse,
-    ResearchDownload,
-    ResearchDownloadResponse,
     ResearchUpdate,
 )
 
@@ -579,11 +581,6 @@ class ResearchService:
 
     def download_research(self, research: ResearchDownload) -> ResearchDownloadResponse:
         """Download a research paper PDF to output/research directory"""
-        import requests
-        import os
-        import re
-        from pathlib import Path
-        from urllib.parse import urlparse
 
         try:
             # Create output/research directory if it doesn't exist
@@ -599,20 +596,25 @@ class ResearchService:
                 safe_title = "".join(
                     c for c in research.title if c.isalnum() or c in (" ", "-", "_")
                 ).strip()
-                safe_title = re.sub(r'\s+', '_', safe_title)  # Replace spaces with underscores
+                safe_title = re.sub(
+                    r"\s+", "_", safe_title
+                )  # Replace spaces with underscores
                 safe_title = safe_title[:100]  # Limit length to 100 characters
 
             # If no title, try to extract arXiv ID from URL
             if not safe_title and research.arxiv_url:
-                match = re.search(r'arxiv\.org/abs/([^/]+)', research.arxiv_url)
+                match = re.search(r"arxiv\.org/abs/([^/]+)", research.arxiv_url)
                 if match:
                     arxiv_id = match.group(1)
-                    safe_title = arxiv_id.replace('/', '_').replace('\\', '_')
+                    safe_title = arxiv_id.replace("/", "_").replace("\\", "_")
 
             # Final fallback: use timestamp
             if not safe_title:
                 from datetime import datetime
-                safe_title = f"research_paper_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+                safe_title = (
+                    f"research_paper_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                )
 
             filename = f"{safe_title}.pdf"
             filepath = output_dir / filename
@@ -631,18 +633,18 @@ class ResearchService:
 
             # Download with proper headers and streaming
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
             }
 
             response = requests.get(pdf_url, headers=headers, timeout=30, stream=True)
             response.raise_for_status()
 
             # Check if response is actually a PDF
-            content_type = response.headers.get('content-type', '').lower()
-            if 'pdf' not in content_type and not pdf_url.endswith('.pdf'):
+            content_type = response.headers.get("content-type", "").lower()
+            if "pdf" not in content_type and not pdf_url.endswith(".pdf"):
                 # Try to detect PDF by content
-                first_chunk = next(response.iter_content(chunk_size=1024), b'')
-                if not first_chunk.startswith(b'%PDF'):
+                first_chunk = next(response.iter_content(chunk_size=1024), b"")
+                if not first_chunk.startswith(b"%PDF"):
                     raise ValueError("Downloaded content is not a valid PDF file")
 
                 # Write the first chunk and continue with the rest
