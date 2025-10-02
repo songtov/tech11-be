@@ -3,7 +3,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from app.models.research import Research
-from app.schemas.research import ResearchCreate, ResearchUpdate
+from app.schemas.research import ResearchCreate, ResearchSearch, ResearchUpdate
 
 
 class ResearchService:
@@ -17,6 +17,9 @@ class ResearchService:
         self.db.commit()
         self.db.refresh(db_research)
         return db_research
+
+    def search_research(self, research: ResearchSearch) -> List[Research]:
+        pass
 
     def get_research(self, research_id: int) -> Optional[Research]:
         """Get a research entry by ID"""
