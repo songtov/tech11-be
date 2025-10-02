@@ -1,19 +1,18 @@
 import os
 import re
 import tempfile
-import requests
 from typing import List
-from pathlib import Path
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+import requests
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_community.vectorstores import FAISS
-from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_openai import AzureOpenAIEmbeddings, AzureChatOpenAI
+from langchain_core.prompts import PromptTemplate
+from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.core.config import settings
-from app.schemas.quiz import QuizCreate, QuizResponse, QuestionResponse
+from app.schemas.quiz import QuestionResponse, QuizCreate, QuizResponse
 
 
 class QuizService:
@@ -135,14 +134,14 @@ class QuizService:
         questions = []
 
         # Split by "문제 " pattern to find individual questions
-        question_blocks = re.split(r'문제\s+\d+:', quiz_text)
+        question_blocks = re.split(r"문제\s+\d+:", quiz_text)
 
         for block in question_blocks[1:]:  # Skip the first empty split
             if not block.strip():
                 continue
 
             # Extract question, answer, and explanation
-            lines = block.strip().split('\n')
+            lines = block.strip().split("\n")
             question_text = ""
             answer_text = ""
             explanation_text = ""
@@ -160,7 +159,9 @@ class QuizService:
                 elif line.startswith("해설:"):
                     current_section = "explanation"
                     explanation_text = line.replace("해설:", "").strip()
-                elif line.startswith("생각해볼 의견:") or line.startswith("실무 적용 방향:"):
+                elif line.startswith("생각해볼 의견:") or line.startswith(
+                    "실무 적용 방향:"
+                ):
                     break  # Stop parsing when we reach the end sections
                 else:
                     if current_section == "question":
@@ -176,11 +177,13 @@ class QuizService:
             explanation_text = explanation_text.strip()
 
             if question_text and answer_text and explanation_text:
-                questions.append(QuestionResponse(
-                    question=question_text,
-                    answer=answer_text,
-                    explanation=explanation_text
-                ))
+                questions.append(
+                    QuestionResponse(
+                        question=question_text,
+                        answer=answer_text,
+                        explanation=explanation_text,
+                    )
+                )
 
         return questions
 
@@ -201,11 +204,13 @@ class QuizService:
 
             # If parsing failed, create a fallback response
             if not questions:
-                questions = [QuestionResponse(
-                    question="퀴즈 생성 중 파싱 오류가 발생했습니다. 다시 시도해주세요.",
-                    answer="N/A",
-                    explanation="시스템 오류로 인해 퀴즈를 정상적으로 파싱할 수 없었습니다."
-                )]
+                questions = [
+                    QuestionResponse(
+                        question="퀴즈 생성 중 파싱 오류가 발생했습니다. 다시 시도해주세요.",
+                        answer="N/A",
+                        explanation="시스템 오류로 인해 퀴즈를 정상적으로 파싱할 수 없었습니다.",
+                    )
+                ]
 
             return QuizResponse(data=questions)
 

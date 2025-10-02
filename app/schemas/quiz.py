@@ -1,14 +1,17 @@
 from typing import List
+
 from pydantic import BaseModel, Field, validator
 
 
 class QuizCreate(BaseModel):
-    path: str = Field(..., description="Path to the PDF file (local path or URL)", min_length=1)
+    path: str = Field(
+        ..., description="Path to the PDF file (local path or URL)", min_length=1
+    )
 
-    @validator('path')
+    @validator("path")
     def validate_path(cls, v):
         if not v or not v.strip():
-            raise ValueError('Path cannot be empty')
+            raise ValueError("Path cannot be empty")
         return v.strip()
 
 
@@ -19,4 +22,6 @@ class QuestionResponse(BaseModel):
 
 
 class QuizResponse(BaseModel):
-    data: List[QuestionResponse] = Field(..., description="List of quiz questions and answers")
+    data: List[QuestionResponse] = Field(
+        ..., description="List of quiz questions and answers"
+    )
