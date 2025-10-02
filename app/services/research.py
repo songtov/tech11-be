@@ -152,7 +152,7 @@ class SimplifiedScholarAgent:
         }
 
     def fetch_papers(self, domain: DomainEnum) -> List[Paper]:
-        """Fetch papers for the specified domain (returns exactly 5 papers)"""
+        """Fetch papers for the specified domain (returns exactly 5 papers with arxiv_url)"""
         logger.info(f"Searching papers for domain: {domain}")
 
         # Map Korean domain enum to legacy domain key
@@ -165,19 +165,48 @@ class SimplifiedScholarAgent:
             # Try Semantic Scholar + arXiv approach first
             papers = self._fetch_highly_cited_papers(legacy_domain_key)
 
-            # If not enough papers, fallback to arXiv only
+            # Filter out papers without arxiv_url
+            papers = [p for p in papers if p.arxiv_url and p.arxiv_url.strip()]
+            logger.info(
+                f"Found {len(papers)} papers with ArXiv URLs from Semantic Scholar"
+            )
+
+            # If not enough papers, fallback to arXiv only (which should always have arxiv_url)
             if len(papers) < 5:
                 logger.info(
-                    "Not enough papers from Semantic Scholar, trying arXiv fallback"
+                    "Not enough papers with ArXiv URLs from Semantic Scholar, trying arXiv fallback"
                 )
                 arxiv_papers = self._search_arxiv_papers(
-                    legacy_domain_key, max_results=10
+                    legacy_domain_key,
+                    max_results=20,  # Increased to get more candidates
                 )
 
-                # Combine and deduplicate
+                # Combine and deduplicate (arXiv papers should always have arxiv_url)
                 existing_titles = {p.title.lower() for p in papers}
                 for paper in arxiv_papers:
-                    if paper.title.lower() not in existing_titles and len(papers) < 5:
+                    if (
+                        paper.title.lower() not in existing_titles
+                        and paper.arxiv_url
+                        and paper.arxiv_url.strip()
+                        and len(papers) < 5
+                    ):
+                        papers.append(paper)
+
+            # If still not enough, try more arXiv papers
+            if len(papers) < 5:
+                logger.info("Still need more papers, trying additional arXiv search")
+                additional_papers = self._search_arxiv_papers(
+                    legacy_domain_key, max_results=30, start_offset=20
+                )
+
+                existing_titles = {p.title.lower() for p in papers}
+                for paper in additional_papers:
+                    if (
+                        paper.title.lower() not in existing_titles
+                        and paper.arxiv_url
+                        and paper.arxiv_url.strip()
+                        and len(papers) < 5
+                    ):
                         papers.append(paper)
 
             # Ensure exactly 5 papers
@@ -272,13 +301,13 @@ class SimplifiedScholarAgent:
                         if author.get("name")
                     ]
 
+                    # Only include papers with ArXiv IDs
+                    if not arxiv_id:
+                        continue
+
                     # Generate URLs
-                    pdf_url = (
-                        f"https://arxiv.org/pdf/{arxiv_id}.pdf"
-                        if arxiv_id
-                        else paper_data.get("openAccessPdf", {}).get("url", "")
-                    )
-                    arxiv_url = f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else ""
+                    pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+                    arxiv_url = f"https://arxiv.org/abs/{arxiv_id}"
 
                     paper = Paper(
                         id=paper_data.get("paperId", ""),
@@ -307,7 +336,7 @@ class SimplifiedScholarAgent:
             return []
 
     def _search_arxiv_papers(
-        self, legacy_domain_key: str, max_results: int = 5
+        self, legacy_domain_key: str, max_results: int = 5, start_offset: int = 0
     ) -> List[Paper]:
         """Search arXiv directly for papers"""
         try:
@@ -324,7 +353,7 @@ class SimplifiedScholarAgent:
 
             params = {
                 "search_query": search_query,
-                "start": 0,
+                "start": start_offset,
                 "max_results": max_results * 2,
                 "sortBy": "relevance",
                 "sortOrder": "descending",
@@ -445,6 +474,14 @@ class ResearchService:
                             id=i + 1,
                             title=f"No papers found for domain {research.domain.value}",
                             abstract="No research papers were found for the specified domain. Please try a different domain or check back later.",
+                            authors=[],
+                            published_date=None,
+                            updated_date=None,
+                            categories=[],
+                            pdf_url=None,
+                            arxiv_url=None,
+                            citation_count=0,
+                            relevance_score=0.0,
                             created_at=datetime.now(),
                             updated_at=datetime.now(),
                         )
@@ -475,6 +512,14 @@ class ResearchService:
                     id=i + 1,  # Use index as ID since we don't store in DB
                     title=paper.title,
                     abstract=paper.abstract or "No abstract available",
+                    authors=paper.authors,
+                    published_date=paper.published_date,
+                    updated_date=paper.updated_date,
+                    categories=paper.categories,
+                    pdf_url=paper.pdf_url,
+                    arxiv_url=paper.arxiv_url,
+                    citation_count=paper.citation_count,
+                    relevance_score=paper.relevance_score,
                     created_at=created_at,
                     updated_at=created_at,
                 )
@@ -487,6 +532,14 @@ class ResearchService:
                         id=len(research_responses) + 1,
                         title="Additional research needed",
                         abstract="Additional research papers are being processed. Please check back later for more results.",
+                        authors=[],
+                        published_date=None,
+                        updated_date=None,
+                        categories=[],
+                        pdf_url=None,
+                        arxiv_url=None,
+                        citation_count=0,
+                        relevance_score=0.0,
                         created_at=datetime.now(),
                         updated_at=datetime.now(),
                     )
@@ -508,6 +561,14 @@ class ResearchService:
                         id=i + 1,
                         title=f"Search Error for {research.domain.value}",
                         abstract=f"An error occurred while searching for research papers: {str(e)}. Please try again later.",
+                        authors=[],
+                        published_date=None,
+                        updated_date=None,
+                        categories=[],
+                        pdf_url=None,
+                        arxiv_url=None,
+                        citation_count=0,
+                        relevance_score=0.0,
                         created_at=datetime.now(),
                         updated_at=datetime.now(),
                     )

@@ -34,6 +34,14 @@ class ResearchUpdate(BaseModel):
 
 class ResearchResponse(ResearchBase):
     id: int
+    authors: List[str] = []
+    published_date: Optional[str] = None
+    updated_date: Optional[str] = None
+    categories: List[str] = []
+    pdf_url: Optional[str] = None
+    arxiv_url: Optional[str] = None
+    citation_count: int = 0
+    relevance_score: float = 0.0
     created_at: datetime
     updated_at: datetime
 
