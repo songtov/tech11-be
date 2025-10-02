@@ -619,7 +619,7 @@ class ResearchService:
 
             # Check if file already exists
             if filepath.exists():
-                return ResearchDownloadResponse(output_path=str(filepath))
+                return ResearchDownloadResponse(output_path=str(filepath.absolute()))
 
             # Download PDF from the provided URL
             pdf_url = research.pdf_url
@@ -665,7 +665,7 @@ class ResearchService:
             print(f"✅ PDF download completed: {filepath}")
             print(f"📊 File size: {filepath.stat().st_size} bytes")
 
-            return ResearchDownloadResponse(output_path=str(filepath))
+            return ResearchDownloadResponse(output_path=str(filepath.absolute()))
 
         except requests.exceptions.Timeout:
             raise ValueError("PDF download timed out")
