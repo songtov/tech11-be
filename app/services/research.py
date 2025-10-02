@@ -167,7 +167,9 @@ class SimplifiedScholarAgent:
 
             # Filter out papers without arxiv_url
             papers = [p for p in papers if p.arxiv_url and p.arxiv_url.strip()]
-            logger.info(f"Found {len(papers)} papers with ArXiv URLs from Semantic Scholar")
+            logger.info(
+                f"Found {len(papers)} papers with ArXiv URLs from Semantic Scholar"
+            )
 
             # If not enough papers, fallback to arXiv only (which should always have arxiv_url)
             if len(papers) < 5:
@@ -175,29 +177,36 @@ class SimplifiedScholarAgent:
                     "Not enough papers with ArXiv URLs from Semantic Scholar, trying arXiv fallback"
                 )
                 arxiv_papers = self._search_arxiv_papers(
-                    legacy_domain_key, max_results=20  # Increased to get more candidates
+                    legacy_domain_key,
+                    max_results=20,  # Increased to get more candidates
                 )
 
                 # Combine and deduplicate (arXiv papers should always have arxiv_url)
                 existing_titles = {p.title.lower() for p in papers}
                 for paper in arxiv_papers:
-                    if (paper.title.lower() not in existing_titles and
-                        paper.arxiv_url and paper.arxiv_url.strip() and
-                        len(papers) < 5):
+                    if (
+                        paper.title.lower() not in existing_titles
+                        and paper.arxiv_url
+                        and paper.arxiv_url.strip()
+                        and len(papers) < 5
+                    ):
                         papers.append(paper)
 
             # If still not enough, try more arXiv papers
             if len(papers) < 5:
-                logger.info(f"Still need more papers, trying additional arXiv search")
+                logger.info("Still need more papers, trying additional arXiv search")
                 additional_papers = self._search_arxiv_papers(
                     legacy_domain_key, max_results=30, start_offset=20
                 )
 
                 existing_titles = {p.title.lower() for p in papers}
                 for paper in additional_papers:
-                    if (paper.title.lower() not in existing_titles and
-                        paper.arxiv_url and paper.arxiv_url.strip() and
-                        len(papers) < 5):
+                    if (
+                        paper.title.lower() not in existing_titles
+                        and paper.arxiv_url
+                        and paper.arxiv_url.strip()
+                        and len(papers) < 5
+                    ):
                         papers.append(paper)
 
             # Ensure exactly 5 papers
