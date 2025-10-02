@@ -61,5 +61,5 @@ class ResearchDownload(BaseModel):
 
 
 class ResearchDownloadResponse(BaseModel):
-    output_path: str
+    output_path: str = Field(..., description="Absolute path to the downloaded PDF file")
 

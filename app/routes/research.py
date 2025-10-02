@@ -47,7 +47,7 @@ def download_research(research: ResearchDownload, db: Session = Depends(get_db))
         research: ResearchDownload object containing pdf_url, arxiv_url, and optional title
 
     Returns:
-        ResearchDownloadResponse with the output_path of the downloaded PDF
+        ResearchDownloadResponse with the absolute path of the downloaded PDF
 
     Raises:
         ValueError: If PDF download fails or URL is invalid
