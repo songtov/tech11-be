@@ -6,12 +6,12 @@ from pydantic import BaseModel, Field
 
 
 class DomainEnum(str, Enum):
-    FINANCE = "finance"
-    AI = "ai"
-    DATA = "data"
-    MANUFACTURE = "manufacture"
-    CLOUD = "cloud"
-    HEALTHCARE = "healthcare"
+    FINANCE = "금융"
+    COMMUNICATION = "통신"
+    MANUFACTURE = "제조"
+    LOGISTICS = "유통/물류"
+    AI = "AI"
+    CLOUD = "클라우드"
 
 
 class ResearchBase(BaseModel):

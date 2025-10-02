@@ -38,14 +38,14 @@ class SimplifiedScholarAgent:
     def __init__(self):
         self.base_url = "http://export.arxiv.org/api/query"
 
-        # Domain mapping from English to Korean (legacy system)
+        # Domain mapping from Korean enum to legacy Korean domain keys
         self.domain_mapping = {
             DomainEnum.FINANCE: "금융",
-            DomainEnum.AI: "Gen AI",
+            DomainEnum.COMMUNICATION: "통신",
             DomainEnum.MANUFACTURE: "제조",
-            DomainEnum.CLOUD: "CLOUD",
-            DomainEnum.DATA: "Gen AI",  # Map to AI as closest match
-            DomainEnum.HEALTHCARE: "Gen AI"  # Map to AI as closest match
+            DomainEnum.LOGISTICS: "유통/물류",
+            DomainEnum.AI: "Gen AI",  # Map to legacy "Gen AI" key
+            DomainEnum.CLOUD: "CLOUD"  # Map to legacy "CLOUD" key
         }
 
         # Domain keywords (from legacy)
@@ -82,20 +82,20 @@ class SimplifiedScholarAgent:
         """Fetch papers for the specified domain (returns exactly 5 papers)"""
         logger.info(f"Searching papers for domain: {domain}")
 
-        # Map English domain to Korean domain
-        korean_domain = self.domain_mapping.get(domain)
-        if not korean_domain:
+        # Map Korean domain enum to legacy domain key
+        legacy_domain_key = self.domain_mapping.get(domain)
+        if not legacy_domain_key:
             logger.error(f"Unsupported domain: {domain}")
             return []
 
         try:
             # Try Semantic Scholar + arXiv approach first
-            papers = self._fetch_highly_cited_papers(korean_domain)
+            papers = self._fetch_highly_cited_papers(legacy_domain_key)
 
             # If not enough papers, fallback to arXiv only
             if len(papers) < 5:
                 logger.info("Not enough papers from Semantic Scholar, trying arXiv fallback")
-                arxiv_papers = self._search_arxiv_papers(korean_domain, max_results=10)
+                arxiv_papers = self._search_arxiv_papers(legacy_domain_key, max_results=10)
 
                 # Combine and deduplicate
                 existing_titles = {p.title.lower() for p in papers}
@@ -110,10 +110,10 @@ class SimplifiedScholarAgent:
             logger.error(f"Error fetching papers: {e}")
             return []
 
-    def _fetch_highly_cited_papers(self, korean_domain: str) -> List[Paper]:
+    def _fetch_highly_cited_papers(self, legacy_domain_key: str) -> List[Paper]:
         """Fetch highly cited papers using Semantic Scholar API"""
         try:
-            journals = self.domain_journals.get(korean_domain, [])
+            journals = self.domain_journals.get(legacy_domain_key, [])
             if not journals:
                 return []
 
@@ -215,11 +215,11 @@ class SimplifiedScholarAgent:
             logger.error(f"Semantic Scholar search error: {e}")
             return []
 
-    def _search_arxiv_papers(self, korean_domain: str, max_results: int = 5) -> List[Paper]:
+    def _search_arxiv_papers(self, legacy_domain_key: str, max_results: int = 5) -> List[Paper]:
         """Search arXiv directly for papers"""
         try:
-            keywords = self.domain_keywords.get(korean_domain, [])
-            categories = self.arxiv_categories.get(korean_domain, [])
+            keywords = self.domain_keywords.get(legacy_domain_key, [])
+            categories = self.arxiv_categories.get(legacy_domain_key, [])
 
             # Build search query
             search_query = " OR ".join([f"all:{keyword}" for keyword in keywords[:3]])  # Limit keywords
@@ -345,7 +345,7 @@ class ResearchService:
                 for i in range(5):
                     dummy_responses.append(ResearchResponse(
                         id=i + 1,
-                        title=f"No papers found for domain {research.domain}",
+                        title=f"No papers found for domain {research.domain.value}",
                         abstract="No research papers were found for the specified domain. Please try a different domain or check back later.",
                         created_at=datetime.now(),
                         updated_at=datetime.now()
@@ -402,7 +402,7 @@ class ResearchService:
             for i in range(5):
                 error_responses.append(ResearchResponse(
                     id=i + 1,
-                    title=f"Search Error for {research.domain}",
+                    title=f"Search Error for {research.domain.value}",
                     abstract=f"An error occurred while searching for research papers: {str(e)}. Please try again later.",
                     created_at=datetime.now(),
                     updated_at=datetime.now()

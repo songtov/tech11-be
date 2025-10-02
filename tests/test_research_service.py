@@ -25,26 +25,26 @@ class TestSimplifiedScholarAgent:
         """Test that domain mapping is correctly configured"""
         expected_mappings = {
             DomainEnum.FINANCE: "금융",
-            DomainEnum.AI: "Gen AI",
+            DomainEnum.COMMUNICATION: "통신",
             DomainEnum.MANUFACTURE: "제조",
-            DomainEnum.CLOUD: "CLOUD",
-            DomainEnum.DATA: "Gen AI",
-            DomainEnum.HEALTHCARE: "Gen AI"
+            DomainEnum.LOGISTICS: "유통/물류",
+            DomainEnum.AI: "Gen AI",
+            DomainEnum.CLOUD: "CLOUD"
         }
 
         assert self.agent.domain_mapping == expected_mappings
 
     def test_domain_keywords_exist(self):
         """Test that all mapped domains have keywords"""
-        for english_domain, korean_domain in self.agent.domain_mapping.items():
-            assert korean_domain in self.agent.domain_keywords
-            assert len(self.agent.domain_keywords[korean_domain]) > 0
+        for korean_domain_enum, legacy_domain_key in self.agent.domain_mapping.items():
+            assert legacy_domain_key in self.agent.domain_keywords
+            assert len(self.agent.domain_keywords[legacy_domain_key]) > 0
 
     def test_arxiv_categories_exist(self):
         """Test that all mapped domains have arXiv categories"""
-        for english_domain, korean_domain in self.agent.domain_mapping.items():
-            assert korean_domain in self.agent.arxiv_categories
-            assert len(self.agent.arxiv_categories[korean_domain]) > 0
+        for korean_domain_enum, legacy_domain_key in self.agent.domain_mapping.items():
+            assert legacy_domain_key in self.agent.arxiv_categories
+            assert len(self.agent.arxiv_categories[legacy_domain_key]) > 0
 
     @patch('app.services.research.requests.get')
     def test_fetch_papers_success(self, mock_get):
@@ -242,7 +242,7 @@ class TestResearchService:
             # All should be dummy entries
             for response in result.data:
                 assert "No papers found for domain" in response.title
-                assert "finance" in response.title.lower()
+                assert "금융" in response.title
 
     def test_search_research_api_error(self):
         """Test handling of API errors"""
@@ -256,7 +256,7 @@ class TestResearchService:
             # All should be error entries
             for response in result.data:
                 assert "Search Error for" in response.title
-                assert "cloud" in response.title.lower()
+                assert "클라우드" in response.title
                 assert "API Error" in response.abstract
 
     def test_search_research_exactly_5_papers(self):
@@ -278,7 +278,7 @@ class TestResearchService:
         ]
 
         with patch.object(self.service.scholar_agent, 'fetch_papers', return_value=test_papers):
-            search_request = ResearchSearch(domain=DomainEnum.DATA)
+            search_request = ResearchSearch(domain=DomainEnum.AI)
             result = self.service.search_research(search_request)
 
             assert len(result.data) == 5
@@ -415,11 +415,11 @@ class TestResearchService:
 
     @pytest.mark.parametrize("domain", [
         DomainEnum.FINANCE,
-        DomainEnum.AI,
+        DomainEnum.COMMUNICATION,
         DomainEnum.MANUFACTURE,
-        DomainEnum.CLOUD,
-        DomainEnum.DATA,
-        DomainEnum.HEALTHCARE
+        DomainEnum.LOGISTICS,
+        DomainEnum.AI,
+        DomainEnum.CLOUD
     ])
     def test_search_research_all_domains(self, domain):
         """Test that all domains are supported"""
@@ -432,7 +432,7 @@ class TestResearchService:
 
             # Should return dummy responses for unsupported/empty results
             for response in result.data:
-                assert domain.value in response.title.lower()
+                assert domain.value.lower() in response.title.lower()
 
 
 class TestIntegration:
