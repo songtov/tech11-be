@@ -22,6 +22,7 @@ class ResearchBase(BaseModel):
 class ResearchSearch(BaseModel):
     domain: DomainEnum
 
+
 class ResearchCreate(ResearchBase):
     pass
 
@@ -41,4 +42,6 @@ class ResearchResponse(ResearchBase):
 
 
 class ResearchSearchResponse(BaseModel):
-    data: List[ResearchResponse] = Field(..., min_length=5, max_length=5, description="Exactly 5 research responses")
+    data: List[ResearchResponse] = Field(
+        ..., min_length=5, max_length=5, description="Exactly 5 research responses"
+    )

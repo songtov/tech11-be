@@ -1,15 +1,22 @@
-import requests
-import time
 import logging
-from datetime import datetime, timedelta
-from typing import List, Optional, Dict
+import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional
 from xml.etree import ElementTree as ET
 
+import requests
 from sqlalchemy.orm import Session
 
 from app.models.research import Research
-from app.schemas.research import ResearchCreate, ResearchSearch, ResearchUpdate, ResearchResponse, ResearchSearchResponse, DomainEnum
+from app.schemas.research import (
+    DomainEnum,
+    ResearchCreate,
+    ResearchResponse,
+    ResearchSearch,
+    ResearchSearchResponse,
+    ResearchUpdate,
+)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -19,6 +26,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Paper:
     """Paper information data class"""
+
     id: str
     title: str
     authors: List[str]
@@ -45,17 +53,59 @@ class SimplifiedScholarAgent:
             DomainEnum.MANUFACTURE: "제조",
             DomainEnum.LOGISTICS: "유통/물류",
             DomainEnum.AI: "Gen AI",  # Map to legacy "Gen AI" key
-            DomainEnum.CLOUD: "CLOUD"  # Map to legacy "CLOUD" key
+            DomainEnum.CLOUD: "CLOUD",  # Map to legacy "CLOUD" key
         }
 
         # Domain keywords (from legacy)
         self.domain_keywords = {
-            "제조": ["manufacturing", "production", "industrial", "factory", "automation", "robotics"],
-            "금융": ["finance", "financial", "banking", "fintech", "investment", "trading", "economics"],
-            "CLOUD": ["cloud computing", "distributed systems", "microservices", "kubernetes", "container"],
-            "통신": ["telecommunications", "communication", "network", "5G", "6G", "wireless"],
-            "유통/물류": ["logistics", "supply chain", "distribution", "retail", "e-commerce", "optimization"],
-            "Gen AI": ["artificial intelligence", "machine learning", "deep learning", "LLM", "generative AI", "neural networks"],
+            "제조": [
+                "manufacturing",
+                "production",
+                "industrial",
+                "factory",
+                "automation",
+                "robotics",
+            ],
+            "금융": [
+                "finance",
+                "financial",
+                "banking",
+                "fintech",
+                "investment",
+                "trading",
+                "economics",
+            ],
+            "CLOUD": [
+                "cloud computing",
+                "distributed systems",
+                "microservices",
+                "kubernetes",
+                "container",
+            ],
+            "통신": [
+                "telecommunications",
+                "communication",
+                "network",
+                "5G",
+                "6G",
+                "wireless",
+            ],
+            "유통/물류": [
+                "logistics",
+                "supply chain",
+                "distribution",
+                "retail",
+                "e-commerce",
+                "optimization",
+            ],
+            "Gen AI": [
+                "artificial intelligence",
+                "machine learning",
+                "deep learning",
+                "LLM",
+                "generative AI",
+                "neural networks",
+            ],
         }
 
         # arXiv categories mapping
@@ -70,12 +120,35 @@ class SimplifiedScholarAgent:
 
         # Domain journals for Semantic Scholar search
         self.domain_journals = {
-            "금융": ["Journal of Finance", "Journal of Financial Economics", "Review of Financial Studies", "Science"],
-            "통신": ["IEEE Communications Magazine", "IEEE Transactions on Communications", "Science"],
+            "금융": [
+                "Journal of Finance",
+                "Journal of Financial Economics",
+                "Review of Financial Studies",
+                "Science",
+            ],
+            "통신": [
+                "IEEE Communications Magazine",
+                "IEEE Transactions on Communications",
+                "Science",
+            ],
             "제조": ["Journal of Manufacturing Systems", "CIRP Annals", "Science"],
-            "유통/물류": ["Transportation Research Part E", "International Journal of Physical Distribution & Logistics Management"],
-            "Gen AI": ["AI Journal", "Journal of Artificial Intelligence Research", "NeurIPS", "ICML", "ICLR", "Science"],
-            "CLOUD": ["IEEE Transactions on Cloud Computing", "Springer Journal of Cloud Computing", "Science"],
+            "유통/물류": [
+                "Transportation Research Part E",
+                "International Journal of Physical Distribution & Logistics Management",
+            ],
+            "Gen AI": [
+                "AI Journal",
+                "Journal of Artificial Intelligence Research",
+                "NeurIPS",
+                "ICML",
+                "ICLR",
+                "Science",
+            ],
+            "CLOUD": [
+                "IEEE Transactions on Cloud Computing",
+                "Springer Journal of Cloud Computing",
+                "Science",
+            ],
         }
 
     def fetch_papers(self, domain: DomainEnum) -> List[Paper]:
@@ -94,8 +167,12 @@ class SimplifiedScholarAgent:
 
             # If not enough papers, fallback to arXiv only
             if len(papers) < 5:
-                logger.info("Not enough papers from Semantic Scholar, trying arXiv fallback")
-                arxiv_papers = self._search_arxiv_papers(legacy_domain_key, max_results=10)
+                logger.info(
+                    "Not enough papers from Semantic Scholar, trying arXiv fallback"
+                )
+                arxiv_papers = self._search_arxiv_papers(
+                    legacy_domain_key, max_results=10
+                )
 
                 # Combine and deduplicate
                 existing_titles = {p.title.lower() for p in papers}
@@ -137,7 +214,7 @@ class SimplifiedScholarAgent:
                         paper_year = int(paper.published_date.split("-")[0])
                         if paper_year >= two_years_ago.year:
                             recent_papers.append(paper)
-                except:
+                except (ValueError, IndexError, AttributeError):
                     continue
 
             recent_papers.sort(key=lambda x: x.citation_count, reverse=True)
@@ -158,9 +235,13 @@ class SimplifiedScholarAgent:
                 "fields": "paperId,title,authors,year,venue,citationCount,abstract,isOpenAccess,openAccessPdf,externalIds",
             }
 
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
 
-            response = requests.get(base_url, params=params, headers=headers, timeout=30)
+            response = requests.get(
+                base_url, params=params, headers=headers, timeout=30
+            )
 
             if response.status_code != 200:
                 logger.error(f"Semantic Scholar API error: {response.status_code}")
@@ -175,7 +256,9 @@ class SimplifiedScholarAgent:
                     paper_venue = paper_data.get("venue", "").lower()
                     journal_lower = journal.lower()
 
-                    if journal_lower not in paper_venue and not any(word in paper_venue for word in journal_lower.split()):
+                    if journal_lower not in paper_venue and not any(
+                        word in paper_venue for word in journal_lower.split()
+                    ):
                         continue
 
                     # Extract paper information
@@ -183,10 +266,18 @@ class SimplifiedScholarAgent:
                     external_ids = paper_data.get("externalIds", {})
                     arxiv_id = external_ids.get("ArXiv") if external_ids else None
 
-                    authors = [author.get("name", "") for author in paper_data.get("authors", []) if author.get("name")]
+                    authors = [
+                        author.get("name", "")
+                        for author in paper_data.get("authors", [])
+                        if author.get("name")
+                    ]
 
                     # Generate URLs
-                    pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf" if arxiv_id else paper_data.get("openAccessPdf", {}).get("url", "")
+                    pdf_url = (
+                        f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+                        if arxiv_id
+                        else paper_data.get("openAccessPdf", {}).get("url", "")
+                    )
                     arxiv_url = f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else ""
 
                     paper = Paper(
@@ -215,14 +306,18 @@ class SimplifiedScholarAgent:
             logger.error(f"Semantic Scholar search error: {e}")
             return []
 
-    def _search_arxiv_papers(self, legacy_domain_key: str, max_results: int = 5) -> List[Paper]:
+    def _search_arxiv_papers(
+        self, legacy_domain_key: str, max_results: int = 5
+    ) -> List[Paper]:
         """Search arXiv directly for papers"""
         try:
             keywords = self.domain_keywords.get(legacy_domain_key, [])
             categories = self.arxiv_categories.get(legacy_domain_key, [])
 
             # Build search query
-            search_query = " OR ".join([f"all:{keyword}" for keyword in keywords[:3]])  # Limit keywords
+            search_query = " OR ".join(
+                [f"all:{keyword}" for keyword in keywords[:3]]
+            )  # Limit keywords
             if categories:
                 category_query = " OR ".join([f"cat:{cat}" for cat in categories])
                 search_query = f"({search_query}) OR ({category_query})"
@@ -278,7 +373,9 @@ class SimplifiedScholarAgent:
 
             # Extract dates
             published_elem = entry.find("atom:published", ns)
-            published_date = published_elem.text.strip() if published_elem is not None else ""
+            published_date = (
+                published_elem.text.strip() if published_elem is not None else ""
+            )
 
             updated_elem = entry.find("atom:updated", ns)
             updated_date = updated_elem.text.strip() if updated_elem is not None else ""
@@ -343,13 +440,15 @@ class ResearchService:
                 # Return empty response with 5 dummy entries to satisfy schema
                 dummy_responses = []
                 for i in range(5):
-                    dummy_responses.append(ResearchResponse(
-                        id=i + 1,
-                        title=f"No papers found for domain {research.domain.value}",
-                        abstract="No research papers were found for the specified domain. Please try a different domain or check back later.",
-                        created_at=datetime.now(),
-                        updated_at=datetime.now()
-                    ))
+                    dummy_responses.append(
+                        ResearchResponse(
+                            id=i + 1,
+                            title=f"No papers found for domain {research.domain.value}",
+                            abstract="No research papers were found for the specified domain. Please try a different domain or check back later.",
+                            created_at=datetime.now(),
+                            updated_at=datetime.now(),
+                        )
+                    )
                 return ResearchSearchResponse(data=dummy_responses)
 
             # Convert Paper objects to ResearchResponse objects
@@ -359,15 +458,17 @@ class ResearchService:
                 try:
                     if paper.published_date:
                         # Try to parse ISO format first
-                        if 'T' in paper.published_date:
-                            created_at = datetime.fromisoformat(paper.published_date.replace('Z', '+00:00'))
+                        if "T" in paper.published_date:
+                            created_at = datetime.fromisoformat(
+                                paper.published_date.replace("Z", "+00:00")
+                            )
                         else:
                             # Fallback to year-only format
-                            year = int(paper.published_date.split('-')[0])
+                            year = int(paper.published_date.split("-")[0])
                             created_at = datetime(year, 1, 1)
                     else:
                         created_at = datetime.now()
-                except:
+                except (ValueError, IndexError, AttributeError):
                     created_at = datetime.now()
 
                 research_response = ResearchResponse(
@@ -375,19 +476,21 @@ class ResearchService:
                     title=paper.title,
                     abstract=paper.abstract or "No abstract available",
                     created_at=created_at,
-                    updated_at=created_at
+                    updated_at=created_at,
                 )
                 research_responses.append(research_response)
 
             # Ensure exactly 5 responses (pad with dummy if needed)
             while len(research_responses) < 5:
-                research_responses.append(ResearchResponse(
-                    id=len(research_responses) + 1,
-                    title="Additional research needed",
-                    abstract="Additional research papers are being processed. Please check back later for more results.",
-                    created_at=datetime.now(),
-                    updated_at=datetime.now()
-                ))
+                research_responses.append(
+                    ResearchResponse(
+                        id=len(research_responses) + 1,
+                        title="Additional research needed",
+                        abstract="Additional research papers are being processed. Please check back later for more results.",
+                        created_at=datetime.now(),
+                        updated_at=datetime.now(),
+                    )
+                )
 
             # Limit to exactly 5
             research_responses = research_responses[:5]
@@ -400,13 +503,15 @@ class ResearchService:
             # Return error response with 5 dummy entries
             error_responses = []
             for i in range(5):
-                error_responses.append(ResearchResponse(
-                    id=i + 1,
-                    title=f"Search Error for {research.domain.value}",
-                    abstract=f"An error occurred while searching for research papers: {str(e)}. Please try again later.",
-                    created_at=datetime.now(),
-                    updated_at=datetime.now()
-                ))
+                error_responses.append(
+                    ResearchResponse(
+                        id=i + 1,
+                        title=f"Search Error for {research.domain.value}",
+                        abstract=f"An error occurred while searching for research papers: {str(e)}. Please try again later.",
+                        created_at=datetime.now(),
+                        updated_at=datetime.now(),
+                    )
+                )
             return ResearchSearchResponse(data=error_responses)
 
     def get_research(self, research_id: int) -> Optional[Research]:

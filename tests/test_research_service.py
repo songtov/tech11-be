@@ -4,14 +4,13 @@ Pytest tests for ResearchService.search_research functionality
 Tests the integration with SimplifiedScholarAgent and various edge cases
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime
-from typing import List
+from unittest.mock import Mock, patch
 
-from app.services.research import ResearchService, SimplifiedScholarAgent, Paper
-from app.schemas.research import ResearchSearch, ResearchSearchResponse, DomainEnum
-from app.models.research import Research
+import pytest
+
+from app.schemas.research import DomainEnum, ResearchSearch, ResearchSearchResponse
+from app.services.research import Paper, ResearchService, SimplifiedScholarAgent
 
 
 class TestSimplifiedScholarAgent:
@@ -29,7 +28,7 @@ class TestSimplifiedScholarAgent:
             DomainEnum.MANUFACTURE: "제조",
             DomainEnum.LOGISTICS: "유통/물류",
             DomainEnum.AI: "Gen AI",
-            DomainEnum.CLOUD: "CLOUD"
+            DomainEnum.CLOUD: "CLOUD",
         }
 
         assert self.agent.domain_mapping == expected_mappings
@@ -46,7 +45,7 @@ class TestSimplifiedScholarAgent:
             assert legacy_domain_key in self.agent.arxiv_categories
             assert len(self.agent.arxiv_categories[legacy_domain_key]) > 0
 
-    @patch('app.services.research.requests.get')
+    @patch("app.services.research.requests.get")
     def test_fetch_papers_success(self, mock_get):
         """Test successful paper fetching"""
         # Mock Semantic Scholar response
@@ -63,7 +62,7 @@ class TestSimplifiedScholarAgent:
                     "citationCount": 50,
                     "abstract": "This is a test abstract about AI",
                     "externalIds": {"ArXiv": "2023.12345"},
-                    "openAccessPdf": {"url": "https://example.com/paper.pdf"}
+                    "openAccessPdf": {"url": "https://example.com/paper.pdf"},
                 }
             ]
         }
@@ -71,7 +70,7 @@ class TestSimplifiedScholarAgent:
         # Mock arXiv response
         mock_arxiv_response = Mock()
         mock_arxiv_response.status_code = 200
-        mock_arxiv_response.content = b'''<?xml version="1.0" encoding="UTF-8"?>
+        mock_arxiv_response.content = b"""<?xml version="1.0" encoding="UTF-8"?>
         <feed xmlns="http://www.w3.org/2005/Atom">
             <entry>
                 <id>http://arxiv.org/abs/2023.12346v1</id>
@@ -82,7 +81,7 @@ class TestSimplifiedScholarAgent:
                 <summary>Another test abstract</summary>
                 <category term="cs.AI" />
             </entry>
-        </feed>'''
+        </feed>"""
 
         # Configure mock to return different responses for different URLs
         def mock_get_side_effect(url, **kwargs):
@@ -101,7 +100,7 @@ class TestSimplifiedScholarAgent:
         if papers:
             assert papers[0].title in ["Test AI Paper", "Another AI Paper"]
 
-    @patch('app.services.research.requests.get')
+    @patch("app.services.research.requests.get")
     def test_fetch_papers_api_failure(self, mock_get):
         """Test handling of API failures"""
         # Mock API failure
@@ -114,11 +113,11 @@ class TestSimplifiedScholarAgent:
     def test_fetch_papers_unsupported_domain(self):
         """Test handling of unsupported domain"""
         # Create a mock domain that doesn't exist in mapping
-        with patch.object(self.agent, 'domain_mapping', {}):
+        with patch.object(self.agent, "domain_mapping", {}):
             papers = self.agent.fetch_papers(DomainEnum.AI)
             assert papers == []
 
-    @patch('app.services.research.requests.get')
+    @patch("app.services.research.requests.get")
     def test_semantic_scholar_search_success(self, mock_get):
         """Test successful Semantic Scholar search"""
         mock_response = Mock()
@@ -134,7 +133,7 @@ class TestSimplifiedScholarAgent:
                     "citationCount": 100,
                     "abstract": "A highly cited paper",
                     "externalIds": {"ArXiv": "2023.54321"},
-                    "openAccessPdf": {"url": "https://example.com/semantic.pdf"}
+                    "openAccessPdf": {"url": "https://example.com/semantic.pdf"},
                 }
             ]
         }
@@ -147,12 +146,12 @@ class TestSimplifiedScholarAgent:
             assert papers[0].title == "Semantic Scholar Paper"
             assert papers[0].citation_count == 100
 
-    @patch('app.services.research.requests.get')
+    @patch("app.services.research.requests.get")
     def test_arxiv_search_success(self, mock_get):
         """Test successful arXiv search"""
         mock_response = Mock()
         mock_response.status_code = 200
-        mock_response.content = b'''<?xml version="1.0" encoding="UTF-8"?>
+        mock_response.content = b"""<?xml version="1.0" encoding="UTF-8"?>
         <feed xmlns="http://www.w3.org/2005/Atom">
             <entry>
                 <id>http://arxiv.org/abs/2023.98765v1</id>
@@ -163,7 +162,7 @@ class TestSimplifiedScholarAgent:
                 <summary>An arXiv paper abstract</summary>
                 <category term="cs.LG" />
             </entry>
-        </feed>'''
+        </feed>"""
         mock_response.raise_for_status = Mock()
         mock_get.return_value = mock_response
 
@@ -198,7 +197,7 @@ class TestResearchService:
                 pdf_url="https://example.com/paper1.pdf",
                 arxiv_url="https://arxiv.org/abs/test1",
                 citation_count=25,
-                relevance_score=0.9
+                relevance_score=0.9,
             ),
             Paper(
                 id="test2",
@@ -211,11 +210,13 @@ class TestResearchService:
                 pdf_url="https://example.com/paper2.pdf",
                 arxiv_url="https://arxiv.org/abs/test2",
                 citation_count=15,
-                relevance_score=0.8
-            )
+                relevance_score=0.8,
+            ),
         ]
 
-        with patch.object(self.service.scholar_agent, 'fetch_papers', return_value=test_papers):
+        with patch.object(
+            self.service.scholar_agent, "fetch_papers", return_value=test_papers
+        ):
             search_request = ResearchSearch(domain=DomainEnum.AI)
             result = self.service.search_research(search_request)
 
@@ -232,7 +233,7 @@ class TestResearchService:
 
     def test_search_research_no_papers_found(self):
         """Test when no papers are found"""
-        with patch.object(self.service.scholar_agent, 'fetch_papers', return_value=[]):
+        with patch.object(self.service.scholar_agent, "fetch_papers", return_value=[]):
             search_request = ResearchSearch(domain=DomainEnum.FINANCE)
             result = self.service.search_research(search_request)
 
@@ -246,7 +247,11 @@ class TestResearchService:
 
     def test_search_research_api_error(self):
         """Test handling of API errors"""
-        with patch.object(self.service.scholar_agent, 'fetch_papers', side_effect=Exception("API Error")):
+        with patch.object(
+            self.service.scholar_agent,
+            "fetch_papers",
+            side_effect=Exception("API Error"),
+        ):
             search_request = ResearchSearch(domain=DomainEnum.CLOUD)
             result = self.service.search_research(search_request)
 
@@ -273,11 +278,14 @@ class TestResearchService:
                 pdf_url=f"https://example.com/paper{i}.pdf",
                 arxiv_url=f"https://arxiv.org/abs/test{i}",
                 citation_count=10 + i,
-                relevance_score=0.5 + i * 0.1
-            ) for i in range(1, 6)
+                relevance_score=0.5 + i * 0.1,
+            )
+            for i in range(1, 6)
         ]
 
-        with patch.object(self.service.scholar_agent, 'fetch_papers', return_value=test_papers):
+        with patch.object(
+            self.service.scholar_agent, "fetch_papers", return_value=test_papers
+        ):
             search_request = ResearchSearch(domain=DomainEnum.AI)
             result = self.service.search_research(search_request)
 
@@ -302,11 +310,14 @@ class TestResearchService:
                 pdf_url=f"https://example.com/paper{i}.pdf",
                 arxiv_url=f"https://arxiv.org/abs/test{i}",
                 citation_count=10 + i,
-                relevance_score=0.5 + i * 0.1
-            ) for i in range(1, 8)  # 7 papers
+                relevance_score=0.5 + i * 0.1,
+            )
+            for i in range(1, 8)  # 7 papers
         ]
 
-        with patch.object(self.service.scholar_agent, 'fetch_papers', return_value=test_papers):
+        with patch.object(
+            self.service.scholar_agent, "fetch_papers", return_value=test_papers
+        ):
             search_request = ResearchSearch(domain=DomainEnum.MANUFACTURE)
             result = self.service.search_research(search_request)
 
@@ -330,7 +341,7 @@ class TestResearchService:
                 pdf_url="https://example.com/paper.pdf",
                 arxiv_url="https://arxiv.org/abs/test",
                 citation_count=10,
-                relevance_score=0.8
+                relevance_score=0.8,
             ),
             Paper(
                 id="test_date2",
@@ -343,7 +354,7 @@ class TestResearchService:
                 pdf_url="https://example.com/paper.pdf",
                 arxiv_url="https://arxiv.org/abs/test",
                 citation_count=5,
-                relevance_score=0.7
+                relevance_score=0.7,
             ),
             Paper(
                 id="test_date3",
@@ -356,11 +367,13 @@ class TestResearchService:
                 pdf_url="https://example.com/paper.pdf",
                 arxiv_url="https://arxiv.org/abs/test",
                 citation_count=1,
-                relevance_score=0.6
-            )
+                relevance_score=0.6,
+            ),
         ]
 
-        with patch.object(self.service.scholar_agent, 'fetch_papers', return_value=test_papers):
+        with patch.object(
+            self.service.scholar_agent, "fetch_papers", return_value=test_papers
+        ):
             search_request = ResearchSearch(domain=DomainEnum.AI)
             result = self.service.search_research(search_request)
 
@@ -386,7 +399,7 @@ class TestResearchService:
                 pdf_url="https://example.com/paper.pdf",
                 arxiv_url="https://arxiv.org/abs/test",
                 citation_count=10,
-                relevance_score=0.8
+                relevance_score=0.8,
             ),
             Paper(
                 id="test_none",
@@ -399,11 +412,13 @@ class TestResearchService:
                 pdf_url="https://example.com/paper.pdf",
                 arxiv_url="https://arxiv.org/abs/test",
                 citation_count=5,
-                relevance_score=0.7
-            )
+                relevance_score=0.7,
+            ),
         ]
 
-        with patch.object(self.service.scholar_agent, 'fetch_papers', return_value=test_papers):
+        with patch.object(
+            self.service.scholar_agent, "fetch_papers", return_value=test_papers
+        ):
             search_request = ResearchSearch(domain=DomainEnum.AI)
             result = self.service.search_research(search_request)
 
@@ -413,17 +428,20 @@ class TestResearchService:
             assert result.data[0].abstract == "No abstract available"
             assert result.data[1].abstract == "No abstract available"
 
-    @pytest.mark.parametrize("domain", [
-        DomainEnum.FINANCE,
-        DomainEnum.COMMUNICATION,
-        DomainEnum.MANUFACTURE,
-        DomainEnum.LOGISTICS,
-        DomainEnum.AI,
-        DomainEnum.CLOUD
-    ])
+    @pytest.mark.parametrize(
+        "domain",
+        [
+            DomainEnum.FINANCE,
+            DomainEnum.COMMUNICATION,
+            DomainEnum.MANUFACTURE,
+            DomainEnum.LOGISTICS,
+            DomainEnum.AI,
+            DomainEnum.CLOUD,
+        ],
+    )
     def test_search_research_all_domains(self, domain):
         """Test that all domains are supported"""
-        with patch.object(self.service.scholar_agent, 'fetch_papers', return_value=[]):
+        with patch.object(self.service.scholar_agent, "fetch_papers", return_value=[]):
             search_request = ResearchSearch(domain=domain)
             result = self.service.search_research(search_request)
 
@@ -443,7 +461,7 @@ class TestIntegration:
         self.mock_db = Mock()
         self.service = ResearchService(self.mock_db)
 
-    @patch('app.services.research.requests.get')
+    @patch("app.services.research.requests.get")
     def test_full_integration_mock(self, mock_get):
         """Test full integration with mocked external APIs"""
         # Mock Semantic Scholar response
@@ -460,7 +478,7 @@ class TestIntegration:
                     "citationCount": 75,
                     "abstract": "This is an integration test paper",
                     "externalIds": {"ArXiv": "2023.integration"},
-                    "openAccessPdf": {"url": "https://example.com/integration.pdf"}
+                    "openAccessPdf": {"url": "https://example.com/integration.pdf"},
                 }
             ]
         }
@@ -468,7 +486,7 @@ class TestIntegration:
         # Mock arXiv response
         mock_arxiv_response = Mock()
         mock_arxiv_response.status_code = 200
-        mock_arxiv_response.content = b'''<?xml version="1.0" encoding="UTF-8"?>
+        mock_arxiv_response.content = b"""<?xml version="1.0" encoding="UTF-8"?>
         <feed xmlns="http://www.w3.org/2005/Atom">
             <entry>
                 <id>http://arxiv.org/abs/2023.integration2v1</id>
@@ -479,7 +497,7 @@ class TestIntegration:
                 <summary>ArXiv integration test abstract</summary>
                 <category term="cs.AI" />
             </entry>
-        </feed>'''
+        </feed>"""
 
         def mock_get_side_effect(url, **kwargs):
             if "semanticscholar.org" in url:
@@ -499,8 +517,10 @@ class TestIntegration:
 
         # Should have at least one real paper
         paper_titles = [paper.title for paper in result.data]
-        assert any("Integration Test Paper" in title or "ArXiv Integration Paper" in title
-                  for title in paper_titles)
+        assert any(
+            "Integration Test Paper" in title or "ArXiv Integration Paper" in title
+            for title in paper_titles
+        )
 
 
 if __name__ == "__main__":

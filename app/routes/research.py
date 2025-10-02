@@ -4,19 +4,26 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.research import ResearchCreate, ResearchResponse, ResearchSearch, ResearchSearchResponse
+from app.schemas.research import (
+    ResearchCreate,
+    ResearchResponse,
+    ResearchSearch,
+    ResearchSearchResponse,
+)
 from app.services.research import ResearchService
 
 router = APIRouter()
 
+
 @router.post(
-    "/research_search", response_model=ResearchSearchResponse, status_code=status.HTTP_201_CREATED
+    "/research_search",
+    response_model=ResearchSearchResponse,
+    status_code=status.HTTP_201_CREATED,
 )
 def search_research(research: ResearchSearch, db: Session = Depends(get_db)):
     """Search for research entries"""
     service = ResearchService(db)
     return service.search_research(research)
-
 
 
 @router.post(
@@ -45,8 +52,6 @@ def get_all_research(skip: int = 0, limit: int = 100, db: Session = Depends(get_
     """Get all research entries with pagination"""
     service = ResearchService(db)
     return service.get_all_research(skip=skip, limit=limit)
-
-
 
 
 @router.delete("/research/{research_id}", status_code=status.HTTP_204_NO_CONTENT)
