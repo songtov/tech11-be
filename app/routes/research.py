@@ -15,10 +15,10 @@ from app.services.research import ResearchService
 router = APIRouter()
 
 
-@router.post(
+@router.get(
     "/research_search",
     response_model=ResearchSearchResponse,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_200_OK,
 )
 def search_research(research: ResearchSearch, db: Session = Depends(get_db)):
     """Search for research entries"""

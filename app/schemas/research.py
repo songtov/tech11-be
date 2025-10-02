@@ -34,6 +34,7 @@ class ResearchUpdate(BaseModel):
 
 class ResearchResponse(ResearchBase):
     id: int
+    paper_id: int
     created_at: datetime
     updated_at: datetime
 
