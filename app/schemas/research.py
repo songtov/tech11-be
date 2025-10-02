@@ -53,3 +53,13 @@ class ResearchSearchResponse(BaseModel):
     data: List[ResearchResponse] = Field(
         ..., min_length=5, max_length=5, description="Exactly 5 research responses"
     )
+
+class ResearchDownload(BaseModel):
+    pdf_url: str
+    arxiv_url: str
+    title: Optional[str] = None
+
+
+class ResearchDownloadResponse(BaseModel):
+    output_path: str
+

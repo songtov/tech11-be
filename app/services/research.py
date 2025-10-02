@@ -15,6 +15,8 @@ from app.schemas.research import (
     ResearchResponse,
     ResearchSearch,
     ResearchSearchResponse,
+    ResearchDownload,
+    ResearchDownloadResponse,
     ResearchUpdate,
 )
 
@@ -574,6 +576,105 @@ class ResearchService:
                     )
                 )
             return ResearchSearchResponse(data=error_responses)
+
+    def download_research(self, research: ResearchDownload) -> ResearchDownloadResponse:
+        """Download a research paper PDF to output/research directory"""
+        import requests
+        import os
+        import re
+        from pathlib import Path
+        from urllib.parse import urlparse
+
+        try:
+            # Create output/research directory if it doesn't exist
+            output_dir = Path("output/research")
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            # Generate safe filename based on title or arXiv ID
+            safe_title = None
+
+            # First try to use the research title if provided
+            if research.title:
+                # Clean the title for use as filename
+                safe_title = "".join(
+                    c for c in research.title if c.isalnum() or c in (" ", "-", "_")
+                ).strip()
+                safe_title = re.sub(r'\s+', '_', safe_title)  # Replace spaces with underscores
+                safe_title = safe_title[:100]  # Limit length to 100 characters
+
+            # If no title, try to extract arXiv ID from URL
+            if not safe_title and research.arxiv_url:
+                match = re.search(r'arxiv\.org/abs/([^/]+)', research.arxiv_url)
+                if match:
+                    arxiv_id = match.group(1)
+                    safe_title = arxiv_id.replace('/', '_').replace('\\', '_')
+
+            # Final fallback: use timestamp
+            if not safe_title:
+                from datetime import datetime
+                safe_title = f"research_paper_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+            filename = f"{safe_title}.pdf"
+            filepath = output_dir / filename
+
+            # Check if file already exists
+            if filepath.exists():
+                return ResearchDownloadResponse(output_path=str(filepath))
+
+            # Download PDF from the provided URL
+            pdf_url = research.pdf_url
+            if not pdf_url:
+                raise ValueError("PDF URL is required for download")
+
+            print(f"📥 Downloading PDF from: {pdf_url}")
+            print(f"💾 Saving to: {filepath}")
+
+            # Download with proper headers and streaming
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+
+            response = requests.get(pdf_url, headers=headers, timeout=30, stream=True)
+            response.raise_for_status()
+
+            # Check if response is actually a PDF
+            content_type = response.headers.get('content-type', '').lower()
+            if 'pdf' not in content_type and not pdf_url.endswith('.pdf'):
+                # Try to detect PDF by content
+                first_chunk = next(response.iter_content(chunk_size=1024), b'')
+                if not first_chunk.startswith(b'%PDF'):
+                    raise ValueError("Downloaded content is not a valid PDF file")
+
+                # Write the first chunk and continue with the rest
+                with open(filepath, "wb") as f:
+                    f.write(first_chunk)
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+            else:
+                # Standard PDF download
+                with open(filepath, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+
+            # Verify file was created and has content
+            if not filepath.exists() or filepath.stat().st_size == 0:
+                raise ValueError("Failed to download PDF or file is empty")
+
+            print(f"✅ PDF download completed: {filepath}")
+            print(f"📊 File size: {filepath.stat().st_size} bytes")
+
+            return ResearchDownloadResponse(output_path=str(filepath))
+
+        except requests.exceptions.Timeout:
+            raise ValueError("PDF download timed out")
+        except requests.exceptions.ConnectionError:
+            raise ValueError("Connection error while downloading PDF")
+        except requests.exceptions.HTTPError as e:
+            raise ValueError(f"HTTP error while downloading PDF: {e}")
+        except Exception as e:
+            raise ValueError(f"Failed to download PDF: {str(e)}")
 
     def get_research(self, research_id: int) -> Optional[Research]:
         """Get a research entry by ID"""

@@ -9,6 +9,8 @@ from app.schemas.research import (
     ResearchResponse,
     ResearchSearch,
     ResearchSearchResponse,
+    ResearchDownload,
+    ResearchDownloadResponse,
 )
 from app.services.research import ResearchService
 
@@ -24,6 +26,34 @@ def search_research(research: ResearchSearch, db: Session = Depends(get_db)):
     """Search for research entries"""
     service = ResearchService(db)
     return service.search_research(research)
+
+
+@router.post(
+    "/research_download",
+    response_model=ResearchDownloadResponse,
+    status_code=status.HTTP_200_OK,
+)
+def download_research(research: ResearchDownload, db: Session = Depends(get_db)):
+    """
+    Download a research paper PDF to output/research directory
+
+    This endpoint downloads a research paper PDF from the provided URL and saves it to
+    the output/research/<research_title>.pdf directory. The filename is generated based on:
+    1. Research title (if provided) - cleaned and truncated to 100 characters
+    2. arXiv ID (extracted from arxiv_url) - as fallback
+    3. Timestamp - as final fallback
+
+    Args:
+        research: ResearchDownload object containing pdf_url, arxiv_url, and optional title
+
+    Returns:
+        ResearchDownloadResponse with the output_path of the downloaded PDF
+
+    Raises:
+        ValueError: If PDF download fails or URL is invalid
+    """
+    service = ResearchService(db)
+    return service.download_research(research)
 
 
 @router.post(
