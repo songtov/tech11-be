@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tech11-be
+    ports:
+      - "8000:8000"
+    environment:
+      # Database
+      - DATABASE_URL=sqlite:///./app.db
+      - ENVIRONMENT=production
+
+      # Azure OpenAI - Set these in .env file or pass as environment variables
+      - AOAI_ENDPOINT=${AOAI_ENDPOINT}
+      - AOAI_API_KEY=${AOAI_API_KEY}
+      - AOAI_DEPLOY_GPT4O_MINI=${AOAI_DEPLOY_GPT4O_MINI:-gpt-4o-mini}
+      - AOAI_DEPLOY_GPT4O=${AOAI_DEPLOY_GPT4O:-gpt-4o}
+      - AOAI_DEPLOY_EMBED_3_LARGE=${AOAI_DEPLOY_EMBED_3_LARGE:-text-embedding-3-large}
+      - AOAI_DEPLOY_EMBED_3_SMALL=${AOAI_DEPLOY_EMBED_3_SMALL:-text-embedding-3-small}
+      - AOAI_DEPLOY_EMBED_ADA=${AOAI_DEPLOY_EMBED_ADA:-text-embedding-ada-002}
+
+      - SECRET_KEY=${SECRET_KEY:-supersecret-change-in-production}
+      - PROJECT_NAME=FastAPI Tech11 Backend
+    volumes:
+      # Persist database
+      - ./app.db:/app/app.db
+      # Persist downloaded research papers
+      - ./output:/app/output
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
