@@ -1,4 +1,3 @@
-import io
 import logging
 import os
 import tempfile
@@ -82,7 +81,7 @@ class SummaryService:
             tmp.flush()
             tmp.close()
 
-            logger.info(f"✅ PDF downloaded successfully from S3")
+            logger.info("✅ PDF downloaded successfully from S3")
 
             # Load PDF using PyMuPDFLoader
             loader = PyMuPDFLoader(tmp.name)
