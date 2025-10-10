@@ -1,7 +1,7 @@
 import os
 
 from fastapi import APIRouter, HTTPException, status
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.schemas.tts import TTSFilenameRequest, TTSPdfPathRequest
 from app.services.tts import TTSService
@@ -100,7 +100,6 @@ async def create_tts_from_pdf_path(request: TTSPdfPathRequest):
 def download_tts(filename: str):
     """
     🎧 생성된 음성 파일 다운로드
-    로컬 파일이 없으면 S3에서 presigned URL로 리다이렉트
     """
     service = TTSService()
 
@@ -120,21 +119,10 @@ def download_tts(filename: str):
 def stream_tts(filename: str):
     """
     🎵 음성 파일 브라우저 즉시 재생용
-    로컬 파일이 없으면 S3에서 presigned URL로 리다이렉트
     """
     service = TTSService()
 
-    # 로컬 파일 먼저 확인
-    file_path = service.get_audio_file_by_filename(filename)
-    if file_path:
-        return FileResponse(
-            path=file_path,
-            media_type="audio/mpeg",
-            filename=filename,
-            headers={"Content-Disposition": "inline"},  # ✅ 바로 재생
-        )
-
-    # 로컬에 없으면 S3에서 확인
+    # S3에서 확인
     presigned_url = service._get_audio_url_from_s3(filename)
     if presigned_url:
         return RedirectResponse(url=presigned_url)
