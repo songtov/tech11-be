@@ -1,6 +1,8 @@
+from pathlib import Path
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -92,3 +94,57 @@ def delete_research(research_id: int, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Research not found"
         )
+
+
+@router.get("/research/files/{filename}")
+def download_research_file(filename: str):
+    """
+    Serve a downloaded research PDF file
+
+    This endpoint serves PDF files that were downloaded via the /research_download endpoint.
+    Files are stored in the output/research directory.
+
+    Args:
+        filename: The name of the PDF file to download
+
+    Returns:
+        FileResponse: The PDF file for download
+
+    Raises:
+        HTTPException: If the file is not found or is not a PDF
+    """
+    # Construct the file path
+    file_path = Path("output/research") / filename
+
+    # Security: Check if file exists and is within the output/research directory
+    if not file_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
+        )
+
+    # Security: Ensure the resolved path is still within output/research
+    try:
+        file_path = file_path.resolve()
+        output_dir = Path("output/research").resolve()
+        if not str(file_path).startswith(str(output_dir)):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
+            )
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid file path"
+        )
+
+    # Security: Only serve PDF files
+    if not filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Only PDF files are allowed"
+        )
+
+    # Return the file as a downloadable attachment
+    return FileResponse(
+        path=file_path,
+        media_type="application/pdf",
+        filename=filename,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
