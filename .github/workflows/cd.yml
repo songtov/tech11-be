@@ -23,10 +23,10 @@ jobs:
           echo "Deploying to EC2..."
           # Sync project files (fast incremental upload)
           rsync -avz --delete \
+            --exclude '.env' \
             -e "ssh -o StrictHostKeyChecking=no" \
             ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.PROJECT_PATH }}
 
-          # Run deployment commands remotely
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
             set -e
             cd ${{ secrets.PROJECT_PATH }}
