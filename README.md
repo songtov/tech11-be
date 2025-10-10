@@ -130,8 +130,39 @@ uv run pytest
 
 ## Environment Variables
 
-Create a `.env` file in the project root for environment-specific configuration:
-Ask college
+Create a `.env` file in the project root with the following configuration:
+
+```bash
+# Environment Configuration
+ENVIRONMENT=development
+
+# Database Configuration
+DATABASE_URL=sqlite:///./app.db
+
+# Security
+SECRET_KEY=supersecret-change-in-production
+
+# Project
+PROJECT_NAME=FastAPI Tech11 Backend
+
+# Azure OpenAI Configuration
+AOAI_ENDPOINT=https://your-resource-name.openai.azure.com/
+AOAI_API_KEY=your-api-key-here
+AOAI_DEPLOY_GPT4O_MINI=gpt-4o-mini
+AOAI_DEPLOY_GPT4O=gpt-4o
+AOAI_DEPLOY_EMBED_3_LARGE=text-embedding-3-large
+AOAI_DEPLOY_EMBED_3_SMALL=text-embedding-3-small
+AOAI_DEPLOY_EMBED_ADA=text-embedding-ada-002
+
+# AWS S3 Configuration (Required for PDF downloads)
+S3_BUCKET=your-s3-bucket-name
+AWS_ACCESS_KEY=your-aws-access-key
+AWS_SECRET_KEY=your-aws-secret-key
+```
+
+**Important**: 
+- The S3 configuration is required for the research PDF download functionality (`/research_download` endpoint). If these variables are not set, you will receive a validation error.
+- When using Docker Compose, all variables from `.env` are automatically loaded into the container via the `env_file` directive.
 
 
 ## Production Deployment
