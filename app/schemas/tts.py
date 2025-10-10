@@ -61,3 +61,9 @@ class TTSPdfPathRequest(BaseModel):
     pdf_path: str = Field(
         ..., description="Path to the PDF file to process for TTS generation"
     )
+
+
+class TTSFilenameRequest(BaseModel):
+    filename: str = Field(
+        ..., description="Filename of the PDF in S3 bucket (e.g., 'myfile.pdf')"
+    )

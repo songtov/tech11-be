@@ -1,21 +1,66 @@
 import os
 
 from fastapi import APIRouter, HTTPException, status
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
-from app.schemas.tts import TTSPdfPathRequest
+from app.schemas.tts import TTSFilenameRequest, TTSPdfPathRequest
 from app.services.tts import TTSService
 
 router = APIRouter(tags=["TTS"], prefix="/tts")
 
 
 # =====================================================
-# 2️⃣ PDF 파일 경로 입력 방식
+# 1️⃣ S3 기반 PDF 파일 처리 (NEW - RECOMMENDED)
+# =====================================================
+@router.post("/from-s3")
+async def create_tts_from_s3(request: TTSFilenameRequest):
+    """
+    S3 PDF 파일명 입력 → S3에서 다운로드 → Multi-Agent 요약 → TTS 음성 생성 → S3 업로드
+    """
+    try:
+        service = TTSService()
+        result = await service.process_pdf_from_s3_to_tts(request.filename)
+
+        return JSONResponse(
+            {
+                "message": "✅ S3 PDF 처리 및 TTS 생성 완료",
+                "pdf_filename": request.filename,
+                "summary": result["summary"],
+                "explainer": result.get("explainer", ""),
+                "tts_id": result["tts_id"],
+                "audio_filename": result["audio_filename"],
+                "s3_url": result.get("s3_url"),
+                "presigned_url": result.get("presigned_url"),
+                "download_url": f"/tts/{result['audio_filename']}/download",
+                "stream_url": f"/tts/{result['audio_filename']}/stream",
+            }
+        )
+
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"S3 PDF to TTS processing failed: {str(e)}",
+        )
+
+
+# =====================================================
+# 2️⃣ PDF 파일 경로 입력 방식 (LEGACY - for backward compatibility)
 # =====================================================
 @router.post("/from-pdf-path")
 async def create_tts_from_pdf_path(request: TTSPdfPathRequest):
     """
     PDF 경로 입력 → Multi-Agent 요약 → TTS 음성 생성 → 결과 반환
+    (Legacy endpoint for backward compatibility - use /from-s3 for new implementations)
     """
     try:
         service = TTSService()
@@ -55,14 +100,17 @@ async def create_tts_from_pdf_path(request: TTSPdfPathRequest):
 def download_tts(filename: str):
     """
     🎧 생성된 음성 파일 다운로드
+    로컬 파일이 없으면 S3에서 presigned URL로 리다이렉트
     """
     service = TTSService()
-    file_path = service.get_audio_file_by_filename(filename)
 
-    if not file_path:
-        raise HTTPException(status_code=404, detail="음성 파일이 존재하지 않습니다.")
+    # S3에서 확인
+    presigned_url = service._get_audio_url_from_s3(filename)
+    if presigned_url:
+        return RedirectResponse(url=presigned_url)
 
-    return FileResponse(path=file_path, filename=filename, media_type="audio/mpeg")
+    # 둘 다 없으면 404
+    raise HTTPException(status_code=404, detail="음성 파일이 존재하지 않습니다.")
 
 
 # =====================================================
@@ -72,16 +120,24 @@ def download_tts(filename: str):
 def stream_tts(filename: str):
     """
     🎵 음성 파일 브라우저 즉시 재생용
+    로컬 파일이 없으면 S3에서 presigned URL로 리다이렉트
     """
     service = TTSService()
+
+    # 로컬 파일 먼저 확인
     file_path = service.get_audio_file_by_filename(filename)
+    if file_path:
+        return FileResponse(
+            path=file_path,
+            media_type="audio/mpeg",
+            filename=filename,
+            headers={"Content-Disposition": "inline"},  # ✅ 바로 재생
+        )
 
-    if not file_path:
-        raise HTTPException(status_code=404, detail="음성 파일이 존재하지 않습니다.")
+    # 로컬에 없으면 S3에서 확인
+    presigned_url = service._get_audio_url_from_s3(filename)
+    if presigned_url:
+        return RedirectResponse(url=presigned_url)
 
-    return FileResponse(
-        path=file_path,
-        media_type="audio/mpeg",
-        filename=filename,
-        headers={"Content-Disposition": "inline"},  # ✅ 바로 재생
-    )
+    # 둘 다 없으면 404
+    raise HTTPException(status_code=404, detail="음성 파일이 존재하지 않습니다.")
