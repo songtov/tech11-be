@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     AOAI_DEPLOY_EMBED_3_SMALL: str = "text-embedding-3-small"
     AOAI_DEPLOY_EMBED_ADA: str = "text-embedding-ada-002"
 
+
+    # S3 Bucket
+    S3_BUCKET: str = ""
+    AWS_ACCESS_KEY: str = ""
+    AWS_SECRET_KEY: str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
