@@ -122,9 +122,18 @@ class SummaryService:
         """Generate PDF file from summarized text"""
         temp_path = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf").name
 
-        # Register Korean font (try multiple locations)
+        # Register Korean font (try multiple locations for cross-platform support)
         font_registered = False
         korean_fonts = [
+            # Linux/Docker paths (Noto Sans KR - install via apt-get install fonts-noto-cjk)
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
+            # macOS paths
+            "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
+            "/Library/Fonts/AppleGothic.ttf",
+            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+            # Windows paths
             r"C:\Windows\Fonts\malgun.ttf",
             r"C:\Windows\Fonts\gulim.ttc",
             r"C:\Windows\Fonts\batang.ttc",
@@ -135,9 +144,16 @@ class SummaryService:
                 try:
                     pdfmetrics.registerFont(TTFont("Korean", font_path))
                     font_registered = True
+                    logger.info(f"✅ Korean font registered: {font_path}")
                     break
-                except Exception:
+                except Exception as e:
+                    logger.warning(f"Failed to register font {font_path}: {e}")
                     continue
+
+        if not font_registered:
+            logger.warning(
+                "⚠️ No Korean font found. PDF may not display Korean text correctly."
+            )
 
         # Create PDF document
         doc = SimpleDocTemplate(temp_path, pagesize=A4)
