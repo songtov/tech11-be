@@ -65,3 +65,7 @@ class ResearchDownloadResponse(BaseModel):
     output_path: str = Field(
         ..., description="Absolute path to the downloaded PDF file"
     )
+    download_url: str = Field(
+        ..., description="URL to download the PDF file from the server"
+    )
+    filename: str = Field(..., description="Name of the downloaded PDF file")
