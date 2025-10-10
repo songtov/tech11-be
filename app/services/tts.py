@@ -1,16 +1,16 @@
 from __future__ import annotations
-import os
+
 import re
-import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict
 
 from gtts import gTTS
 
 # ===========================================================
 # ✅ DB 제거 버전 - 파일 시스템 기반 단일 서비스
 # ===========================================================
+
 
 def clean_text(text: str) -> str:
     """TTS용 텍스트 정제"""
@@ -35,22 +35,23 @@ class TTSService:
         """
         try:
             import sys
+
             legacy_path = Path(__file__).parent.parent.parent / "legacy"
             sys.path.insert(0, str(legacy_path))
-            
+
             from multitest import run_multi_agent  # type: ignore
-            
-            print(f"🎯 Legacy 멀티에이전트 실행 시작: {pdf_path}")
+
+            print("🎯 Legacy 멀티에이전트 실행 시작: {pdf_path}")
             final_state = run_multi_agent(pdf_path)
-            print(f"✅ Legacy 멀티에이전트 실행 완료")
-            
+            print("✅ Legacy 멀티에이전트 실행 완료")
+
             return {
                 "summary": final_state.get("summary", ""),
                 "explainer": final_state.get("explainer", ""),
-                "quiz": final_state.get("quiz", "")
+                "quiz": final_state.get("quiz", ""),
             }
         except Exception as e:
-            print(f"❌ Legacy 멀티에이전트 실행 실패: {e}")
+            print("❌ Legacy 멀티에이전트 실행 실패: {e}")
             raise e
 
     # =====================================================
@@ -65,7 +66,7 @@ class TTSService:
             # 1. 멀티에이전트 실행 (legacy run_multi_agent 호출)
             print(f"📘 Processing PDF: {pdf_path}")
             agent_result = await self._run_legacy_multi_agent(pdf_path)
-            
+
             # 2. Legacy node_tts와 동일: explainer만 사용
             script = agent_result.get("explainer", "")
             if not script:
@@ -75,7 +76,7 @@ class TTSService:
                     "explainer": "",
                     "tts_id": None,
                     "audio_filename": None,
-                    "audio_file_path": None
+                    "audio_file_path": None,
                 }
 
             # 3. Legacy node_tts와 동일: clean_text 적용
@@ -96,11 +97,11 @@ class TTSService:
                 "explainer": script,
                 "tts_id": ts,
                 "audio_filename": audio_filename,
-                "audio_file_path": str(file_path)
+                "audio_file_path": str(file_path),
             }
-            
+
         except Exception as e:
-            print(f"❌ PDF → TTS 처리 실패: {e}")
+            print("❌ PDF → TTS 처리 실패: {e}")
             raise e
 
     # =====================================================
