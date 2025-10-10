@@ -4,7 +4,6 @@ Pytest tests for PDF download and file serving functionality
 Tests the /research_download and /research/files/{filename} endpoints
 """
 
-import os
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -166,7 +165,7 @@ class TestPDFDownloadEndpoint:
         with pytest.raises(
             Exception
         ):  # Will raise ValueError wrapped in HTTP exception
-            response = self.client.post(
+            self.client.post(
                 "/research_download",
                 json={
                     "pdf_url": "https://arxiv.org/pdf/2304.04949v1.pdf",
@@ -193,7 +192,7 @@ class TestPDFDownloadEndpoint:
         with pytest.raises(
             Exception
         ):  # Will raise ValueError wrapped in HTTP exception
-            response = self.client.post(
+            self.client.post(
                 "/research_download",
                 json={
                     "pdf_url": "https://example.com/not-a-pdf",
