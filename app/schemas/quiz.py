@@ -15,6 +15,12 @@ class QuizCreate(BaseModel):
         return v.strip()
 
 
+class QuizFilenameRequest(BaseModel):
+    filename: str = Field(
+        ..., description="Filename of the PDF in S3 bucket (e.g., 'myfile.pdf')"
+    )
+
+
 class QuestionResponse(BaseModel):
     question: str = Field(..., description="The quiz question")
     answer: str = Field(..., description="The correct answer")

@@ -1,9 +1,12 @@
+import logging
 import os
 import re
 import tempfile
 from typing import List
 
+import boto3
 import requests
+from botocore.exceptions import ClientError
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_community.vectorstores import FAISS
 from langchain_core.output_parsers import StrOutputParser
@@ -14,11 +17,24 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from app.core.config import settings
 from app.schemas.quiz import QuestionResponse, QuizCreate, QuizResponse
 
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 class QuizService:
     def __init__(self):
         self.llm_mini = self._get_llm(temperature=0.2, use_mini=True)
         self.embeddings = self._get_embeddings()
+
+        # Initialize S3 client
+        self.s3_client = None
+        if settings.AWS_ACCESS_KEY and settings.AWS_SECRET_KEY:
+            self.s3_client = boto3.client(
+                "s3",
+                aws_access_key_id=settings.AWS_ACCESS_KEY,
+                aws_secret_access_key=settings.AWS_SECRET_KEY,
+            )
 
     def _get_llm(self, temperature: float = 0.2, use_mini: bool = True):
         """Get Azure OpenAI LLM instance"""
@@ -43,8 +59,59 @@ class QuizService:
             azure_endpoint=settings.AOAI_ENDPOINT,
         )
 
+    def _download_pdf_from_s3(self, filename: str) -> str:
+        """Download PDF file from S3 bucket and return temporary file path"""
+        # Validate S3 configuration
+        if not settings.S3_BUCKET:
+            raise ValueError(
+                "S3_BUCKET environment variable is not configured. "
+                "Please set S3_BUCKET in your environment variables."
+            )
+        if not self.s3_client:
+            raise ValueError(
+                "AWS credentials are not configured. "
+                "Please set AWS_ACCESS_KEY and AWS_SECRET_KEY in your environment variables."
+            )
+
+        # Construct S3 key
+        s3_key = f"output/research/{filename}"
+
+        logger.info(f"📥 Downloading PDF from S3: s3://{settings.S3_BUCKET}/{s3_key}")
+
+        try:
+            # Check if file exists in S3
+            self.s3_client.head_object(Bucket=settings.S3_BUCKET, Key=s3_key)
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code == "404":
+                raise FileNotFoundError(
+                    f"PDF file '{filename}' not found in S3 bucket. "
+                    f"Expected location: s3://{settings.S3_BUCKET}/{s3_key}"
+                )
+            else:
+                raise ValueError(f"Error accessing S3 file: {str(e)}")
+
+        # Download PDF from S3 to temporary file
+        try:
+            # Create temporary file
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+
+            # Download from S3
+            self.s3_client.download_fileobj(settings.S3_BUCKET, s3_key, tmp)
+            tmp.flush()
+            tmp.close()
+
+            logger.info("✅ PDF downloaded successfully from S3")
+            return tmp.name
+
+        except Exception as e:
+            # Clean up temporary file if it exists
+            if tmp and os.path.exists(tmp.name):
+                os.unlink(tmp.name)
+            raise ValueError(f"Failed to download PDF from S3: {str(e)}")
+
     def _load_pdf(self, path_or_url: str):
-        """Load PDF from local path or URL"""
+        """Load PDF from local path or URL (legacy method for backward compatibility)"""
         if path_or_url.startswith("http://") or path_or_url.startswith("https://"):
             resp = requests.get(path_or_url, timeout=30)
             resp.raise_for_status()
@@ -189,8 +256,61 @@ O/X 퀴즈를 작성해 주세요.
 
         return questions
 
+    def create_quiz_from_s3(self, filename: str) -> QuizResponse:
+        """Create quiz from PDF file in S3 bucket"""
+        temp_pdf_path = None
+
+        try:
+            # 1. Download PDF from S3
+            logger.info(f"📥 Downloading PDF from S3: {filename}")
+            temp_pdf_path = self._download_pdf_from_s3(filename)
+
+            # 2. Load PDF
+            logger.info("📄 Loading PDF")
+            loader = PyMuPDFLoader(temp_pdf_path)
+            docs = loader.load()
+
+            # 3. Build vectorstore
+            logger.info("🔨 Building vectorstore")
+            vectorstore = self._build_vectorstore(docs)
+
+            # 4. Generate quiz
+            logger.info("🎯 Generating quiz")
+            quiz_text = self._generate_quiz(vectorstore)
+
+            # 5. Parse quiz into structured format
+            logger.info("📋 Parsing quiz response")
+            questions = self._parse_quiz_response(quiz_text)
+
+            # If parsing failed, create a fallback response
+            if not questions:
+                questions = [
+                    QuestionResponse(
+                        question="퀴즈 생성 중 파싱 오류가 발생했습니다. 다시 시도해주세요.",
+                        answer="N/A",
+                        explanation="시스템 오류로 인해 퀴즈를 정상적으로 파싱할 수 없었습니다.",
+                    )
+                ]
+
+            logger.info(
+                f"✅ Quiz generated successfully with {len(questions)} questions"
+            )
+            return QuizResponse(data=questions)
+
+        except FileNotFoundError as e:
+            logger.error(f"❌ PDF file not found: {e}")
+            raise ValueError(f"PDF 파일을 찾을 수 없습니다: {str(e)}")
+        except Exception as e:
+            logger.error(f"❌ Quiz generation failed: {e}")
+            raise ValueError(f"퀴즈 생성 중 오류가 발생했습니다: {str(e)}")
+        finally:
+            # Clean up temporary file
+            if temp_pdf_path and os.path.exists(temp_pdf_path):
+                os.unlink(temp_pdf_path)
+                logger.info(f"🗑️ 임시 PDF 파일 삭제: {temp_pdf_path}")
+
     def create_quiz(self, quiz: QuizCreate) -> QuizResponse:
-        """Create quiz from PDF file"""
+        """Create quiz from PDF file (legacy method for backward compatibility)"""
         try:
             # Load PDF
             docs = self._load_pdf(quiz.path)
