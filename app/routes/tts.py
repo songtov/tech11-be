@@ -9,48 +9,6 @@ from app.services.tts import TTSService
 
 router = APIRouter(tags=["TTS"], prefix="/tts")
 
-
-# =====================================================
-# 1️⃣ PDF 파일 업로드 방식 (직접 업로드)
-# =====================================================
-@router.post("/process_pdf/")
-async def process_pdf(file: UploadFile = File(...)):
-    """
-    PDF 파일 업로드 → Multi-Agent 실행 → 요약 + 음성 파일 생성
-    """
-    try:
-        # 임시 파일 저장
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            tmp_path = tmp.name
-            content = await file.read()
-            tmp.write(content)
-
-        service = TTSService()
-        result = await service.process_pdf_to_tts(tmp_path)
-
-        os.unlink(tmp_path)  # 임시 파일 삭제
-
-        return JSONResponse(
-            {
-                "message": "✅ PDF 업로드 및 TTS 생성 완료",
-                "summary": result["summary"],
-                "explainer": result.get("explainer", ""),
-                "tts_id": result["tts_id"],
-                "audio_file": result["audio_filename"],
-                "download_url": f"/tts/{result['audio_filename']}/download",
-                "stream_url": f"/tts/{result['audio_filename']}/stream",
-            }
-        )
-
-    except Exception as e:
-        if "tmp_path" in locals() and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"PDF 처리 실패: {str(e)}",
-        )
-
-
 # =====================================================
 # 2️⃣ PDF 파일 경로 입력 방식
 # =====================================================
@@ -127,25 +85,3 @@ def stream_tts(filename: str):
         filename=filename,
         headers={"Content-Disposition": "inline"},  # ✅ 바로 재생
     )
-
-
-# =====================================================
-# 5️⃣ TTS 시스템 테스트
-# =====================================================
-@router.get("/test")
-async def test_tts_system():
-    """
-    🔧 TTS 시스템 테스트용
-    """
-    service = TTSService()
-    test_pdf_path = "sample.pdf"  # 예시 (존재하지 않아도 테스트 가능)
-
-    result = await service.process_pdf_to_tts(test_pdf_path)
-
-    return {
-        "message": "✅ TTS 테스트 완료",
-        "tts_id": result["tts_id"],
-        "filename": result["audio_filename"],
-        "download_url": f"/tts/{result['audio_filename']}/download",
-        "stream_url": f"/tts/{result['audio_filename']}/stream",
-    }
