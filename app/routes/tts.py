@@ -1,13 +1,13 @@
 import os
-import tempfile
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse, JSONResponse
 
 from app.schemas.tts import TTSPdfPathRequest
 from app.services.tts import TTSService
 
 router = APIRouter(tags=["TTS"], prefix="/tts")
+
 
 # =====================================================
 # 2️⃣ PDF 파일 경로 입력 방식
