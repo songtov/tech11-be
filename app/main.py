@@ -1,4 +1,4 @@
-# main.py
+# main.py    app이 시작하는 공간. 최상단 router.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
