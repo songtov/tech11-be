@@ -1,15 +1,18 @@
+import io
 import logging
 import re
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Dict, List, Optional
 from xml.etree import ElementTree as ET
 
+import boto3
 import requests
+from botocore.exceptions import ClientError
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.models.research import Research
 from app.schemas.research import (
     DomainEnum,
@@ -580,13 +583,9 @@ class ResearchService:
             return ResearchSearchResponse(data=error_responses)
 
     def download_research(self, research: ResearchDownload) -> ResearchDownloadResponse:
-        """Download a research paper PDF to output/research directory"""
+        """Download a research paper PDF and upload to S3 bucket"""
 
         try:
-            # Create output/research directory if it doesn't exist
-            output_dir = Path("output/research")
-            output_dir.mkdir(parents=True, exist_ok=True)
-
             # Generate safe filename based on title or arXiv ID
             safe_title = None
 
@@ -610,31 +609,43 @@ class ResearchService:
 
             # Final fallback: use timestamp
             if not safe_title:
-                from datetime import datetime
-
                 safe_title = (
                     f"research_paper_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                 )
 
             filename = f"{safe_title}.pdf"
-            filepath = output_dir / filename
+            s3_key = f"output/research/{filename}"
 
-            # Check if file already exists
-            if filepath.exists():
+            # Initialize S3 client
+            s3_client = boto3.client(
+                "s3",
+                aws_access_key_id=settings.AWS_ACCESS_KEY,
+                aws_secret_access_key=settings.AWS_SECRET_KEY,
+            )
+
+            # Check if file already exists in S3
+            try:
+                s3_client.head_object(Bucket=settings.S3_BUCKET, Key=s3_key)
+                logger.info(f"File already exists in S3: {s3_key}")
                 download_url = f"/research/files/{filename}"
                 return ResearchDownloadResponse(
-                    output_path=str(filepath.absolute()),
+                    output_path=f"s3://{settings.S3_BUCKET}/{s3_key}",
                     download_url=download_url,
                     filename=filename,
                 )
+            except ClientError as e:
+                error_code = e.response.get("Error", {}).get("Code", "")
+                if error_code != "404":
+                    raise ValueError(f"Error checking S3 file: {str(e)}")
+                # File doesn't exist, continue with download
 
             # Download PDF from the provided URL
             pdf_url = research.pdf_url
             if not pdf_url:
                 raise ValueError("PDF URL is required for download")
 
-            print(f"📥 Downloading PDF from: {pdf_url}")
-            print(f"💾 Saving to: {filepath}")
+            logger.info(f"📥 Downloading PDF from: {pdf_url}")
+            logger.info(f"☁️ Will upload to S3: s3://{settings.S3_BUCKET}/{s3_key}")
 
             # Download with proper headers and streaming
             headers = {
@@ -646,37 +657,57 @@ class ResearchService:
 
             # Check if response is actually a PDF
             content_type = response.headers.get("content-type", "").lower()
+
+            # Download to memory buffer
+            pdf_buffer = io.BytesIO()
+            first_chunk = None
+
             if "pdf" not in content_type and not pdf_url.endswith(".pdf"):
                 # Try to detect PDF by content
                 first_chunk = next(response.iter_content(chunk_size=1024), b"")
                 if not first_chunk.startswith(b"%PDF"):
                     raise ValueError("Downloaded content is not a valid PDF file")
+                pdf_buffer.write(first_chunk)
 
-                # Write the first chunk and continue with the rest
-                with open(filepath, "wb") as f:
-                    f.write(first_chunk)
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-            else:
-                # Standard PDF download
-                with open(filepath, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
+            # Write all chunks to buffer
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    pdf_buffer.write(chunk)
 
-            # Verify file was created and has content
-            if not filepath.exists() or filepath.stat().st_size == 0:
-                raise ValueError("Failed to download PDF or file is empty")
+            # Get buffer size
+            pdf_size = pdf_buffer.tell()
 
-            print(f"✅ PDF download completed: {filepath}")
-            print(f"📊 File size: {filepath.stat().st_size} bytes")
+            # Verify buffer has content
+            if pdf_size == 0:
+                raise ValueError("Downloaded PDF is empty")
+
+            logger.info(f"📊 Downloaded PDF size: {pdf_size} bytes")
+
+            # Reset buffer position for reading
+            pdf_buffer.seek(0)
+
+            # Upload to S3
+            try:
+                s3_client.upload_fileobj(
+                    pdf_buffer,
+                    settings.S3_BUCKET,
+                    s3_key,
+                    ExtraArgs={
+                        "ContentType": "application/pdf",
+                        "ContentDisposition": f'attachment; filename="{filename}"',
+                    },
+                )
+                logger.info(
+                    f"✅ PDF uploaded to S3: s3://{settings.S3_BUCKET}/{s3_key}"
+                )
+            except Exception as e:
+                raise ValueError(f"Failed to upload PDF to S3: {str(e)}")
 
             # Generate download URL for frontend
             download_url = f"/research/files/{filename}"
 
             return ResearchDownloadResponse(
-                output_path=str(filepath.absolute()),
+                output_path=f"s3://{settings.S3_BUCKET}/{s3_key}",
                 download_url=download_url,
                 filename=filename,
             )

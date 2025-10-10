@@ -1,10 +1,12 @@
-from pathlib import Path
 from typing import List
 
+import boto3
+from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.schemas.research import (
     ResearchCreate,
@@ -37,10 +39,12 @@ def search_research(research: ResearchSearch, db: Session = Depends(get_db)):
 )
 def download_research(research: ResearchDownload, db: Session = Depends(get_db)):
     """
-    Download a research paper PDF to output/research directory
+    Download a research paper PDF and upload to S3 bucket
 
-    This endpoint downloads a research paper PDF from the provided URL and saves it to
-    the output/research/<research_title>.pdf directory. The filename is generated based on:
+    This endpoint downloads a research paper PDF from the provided URL and uploads it to
+    the S3 bucket at path: <bucket_name>/output/research/<filename>.pdf
+
+    The filename is generated based on:
     1. Research title (if provided) - cleaned and truncated to 100 characters
     2. arXiv ID (extracted from arxiv_url) - as fallback
     3. Timestamp - as final fallback
@@ -49,10 +53,13 @@ def download_research(research: ResearchDownload, db: Session = Depends(get_db))
         research: ResearchDownload object containing pdf_url, arxiv_url, and optional title
 
     Returns:
-        ResearchDownloadResponse with the absolute path of the downloaded PDF
+        ResearchDownloadResponse with:
+        - output_path: S3 URI (s3://<bucket>/output/research/<filename>.pdf)
+        - download_url: API endpoint to download the file (/research/files/<filename>)
+        - filename: The generated PDF filename
 
     Raises:
-        ValueError: If PDF download fails or URL is invalid
+        ValueError: If PDF download fails, URL is invalid, or S3 upload fails
     """
     service = ResearchService(db)
     return service.download_research(research)
@@ -86,65 +93,76 @@ def get_all_research(skip: int = 0, limit: int = 100, db: Session = Depends(get_
     return service.get_all_research(skip=skip, limit=limit)
 
 
-@router.delete("/research/{research_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_research(research_id: int, db: Session = Depends(get_db)):
-    """Delete a research entry"""
-    service = ResearchService(db)
-    if not service.delete_research(research_id):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Research not found"
-        )
-
-
 @router.get("/research/files/{filename}")
 def download_research_file(filename: str):
     """
-    Serve a downloaded research PDF file
+    Serve a downloaded research PDF file from S3 bucket
 
-    This endpoint serves PDF files that were downloaded via the /research_download endpoint.
-    Files are stored in the output/research directory.
+    This endpoint serves PDF files that were uploaded to S3 via the /research_download endpoint.
+    Files are stored in the S3 bucket at path: output/research/<filename>
 
     Args:
         filename: The name of the PDF file to download
 
     Returns:
-        FileResponse: The PDF file for download
+        StreamingResponse: The PDF file for download from S3
 
     Raises:
         HTTPException: If the file is not found or is not a PDF
     """
-    # Construct the file path
-    file_path = Path("output/research") / filename
-
-    # Security: Check if file exists and is within the output/research directory
-    if not file_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="File not found"
-        )
-
-    # Security: Ensure the resolved path is still within output/research
-    try:
-        file_path = file_path.resolve()
-        output_dir = Path("output/research").resolve()
-        if not str(file_path).startswith(str(output_dir)):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Access denied"
-            )
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid file path"
-        )
-
     # Security: Only serve PDF files
     if not filename.lower().endswith(".pdf"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Only PDF files are allowed"
         )
 
-    # Return the file as a downloadable attachment
-    return FileResponse(
-        path=file_path,
-        media_type="application/pdf",
-        filename=filename,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    # Security: Prevent path traversal attacks
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid filename"
+        )
+
+    try:
+        # Initialize S3 client
+        s3_client = boto3.client(
+            "s3",
+            aws_access_key_id=settings.AWS_ACCESS_KEY,
+            aws_secret_access_key=settings.AWS_SECRET_KEY,
+        )
+
+        # Construct S3 key path
+        s3_key = f"output/research/{filename}"
+
+        # Try to get the file from S3
+        try:
+            response = s3_client.get_object(Bucket=settings.S3_BUCKET, Key=s3_key)
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code == "NoSuchKey":
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="File not found in S3 bucket",
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Error accessing S3: {str(e)}",
+                )
+
+        # Stream the file content from S3
+        file_stream = response["Body"]
+
+        # Return as streaming response
+        return StreamingResponse(
+            file_stream,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error downloading file from S3: {str(e)}",
+        )
