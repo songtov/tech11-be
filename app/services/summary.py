@@ -1,7 +1,10 @@
+import io
+import logging
 import os
 import tempfile
 
-import requests
+import boto3
+from botocore.exceptions import ClientError
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import AzureChatOpenAI
@@ -15,6 +18,10 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 from app.core.config import settings
 from app.schemas.summary import SummaryCreate, SummaryResponse
 
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 class SummaryService:
     def __init__(self):
@@ -26,23 +33,71 @@ class SummaryService:
             azure_endpoint=settings.AOAI_ENDPOINT,
         )
 
-    def _load_pdf(self, path_or_url: str):
-        """Load PDF file from local path or URL"""
-        if path_or_url.startswith("http://") or path_or_url.startswith("https://"):
-            resp = requests.get(path_or_url, timeout=30)
-            resp.raise_for_status()
+    def _load_pdf_from_s3(self, filename: str):
+        """Load PDF file from S3 bucket"""
+        # Validate S3 configuration
+        if not settings.S3_BUCKET:
+            raise ValueError(
+                "S3_BUCKET environment variable is not configured. "
+                "Please set S3_BUCKET in your environment variables."
+            )
+        if not settings.AWS_ACCESS_KEY or not settings.AWS_SECRET_KEY:
+            raise ValueError(
+                "AWS credentials are not configured. "
+                "Please set AWS_ACCESS_KEY and AWS_SECRET_KEY in your environment variables."
+            )
+
+        # Construct S3 key (assuming files are in output/research/ directory)
+        s3_key = f"output/research/{filename}"
+
+        logger.info(f"📥 Downloading PDF from S3: s3://{settings.S3_BUCKET}/{s3_key}")
+
+        # Initialize S3 client
+        s3_client = boto3.client(
+            "s3",
+            aws_access_key_id=settings.AWS_ACCESS_KEY,
+            aws_secret_access_key=settings.AWS_SECRET_KEY,
+        )
+
+        try:
+            # Check if file exists in S3
+            s3_client.head_object(Bucket=settings.S3_BUCKET, Key=s3_key)
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code == "404":
+                raise FileNotFoundError(
+                    f"PDF file '{filename}' not found in S3 bucket. "
+                    f"Expected location: s3://{settings.S3_BUCKET}/{s3_key}"
+                )
+            else:
+                raise ValueError(f"Error accessing S3 file: {str(e)}")
+
+        # Download PDF from S3 to temporary file
+        try:
+            # Create temporary file
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-            tmp.write(resp.content)
+
+            # Download from S3
+            s3_client.download_fileobj(settings.S3_BUCKET, s3_key, tmp)
             tmp.flush()
+            tmp.close()
+
+            logger.info(f"✅ PDF downloaded successfully from S3")
+
+            # Load PDF using PyMuPDFLoader
             loader = PyMuPDFLoader(tmp.name)
             docs = loader.load()
+
+            # Clean up temporary file
             os.unlink(tmp.name)
-        else:
-            if not os.path.exists(path_or_url):
-                raise FileNotFoundError(f"PDF not found: {path_or_url}")
-            loader = PyMuPDFLoader(path_or_url)
-            docs = loader.load()
-        return docs
+
+            return docs
+
+        except Exception as e:
+            # Clean up temporary file if it exists
+            if tmp and os.path.exists(tmp.name):
+                os.unlink(tmp.name)
+            raise ValueError(f"Failed to download or load PDF from S3: {str(e)}")
 
     def _summarize(self, docs):
         """Use LLM to summarize document"""
@@ -143,10 +198,18 @@ class SummaryService:
         return temp_path
 
     def create_summary(self, summary: SummaryCreate) -> SummaryResponse:
-        """Main summary creation pipeline"""
-        docs = self._load_pdf(summary.path)
+        """Main summary creation pipeline - fetch PDF from S3 and generate summary"""
+        logger.info(f"Creating summary for PDF: {summary.filename}")
+
+        # Load PDF from S3
+        docs = self._load_pdf_from_s3(summary.filename)
+
+        # Generate summary
         summarized_text = self._summarize(docs)
+
+        # Create summary PDF
         pdf_path = self._make_pdf(summarized_text)
+
         return SummaryResponse(
             title="논문 요약 보고서",
             summary=summarized_text,
