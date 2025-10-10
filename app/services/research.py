@@ -616,6 +616,18 @@ class ResearchService:
             filename = f"{safe_title}.pdf"
             s3_key = f"output/research/{filename}"
 
+            # Validate S3 configuration
+            if not settings.S3_BUCKET:
+                raise ValueError(
+                    "S3_BUCKET environment variable is not configured. "
+                    "Please set S3_BUCKET in your environment variables."
+                )
+            if not settings.AWS_ACCESS_KEY or not settings.AWS_SECRET_KEY:
+                raise ValueError(
+                    "AWS credentials are not configured. "
+                    "Please set AWS_ACCESS_KEY and AWS_SECRET_KEY in your environment variables."
+                )
+
             # Initialize S3 client
             s3_client = boto3.client(
                 "s3",
