@@ -23,4 +23,5 @@ class Settings(BaseSettings):
         model_config = {"extra": "ignore"}
         case_sensitive = False
 
+
 settings = Settings()

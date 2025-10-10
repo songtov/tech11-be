@@ -1,17 +1,20 @@
 import os
 import tempfile
+
 import requests
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import AzureChatOpenAI
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+
 from app.core.config import settings
 from app.schemas.summary import SummaryCreate, SummaryResponse
+
 
 class SummaryService:
     def __init__(self):
@@ -64,7 +67,7 @@ class SummaryService:
     def _make_pdf(self, text: str, title="논문 요약 보고서"):
         """Generate PDF file from summarized text"""
         temp_path = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf").name
-        
+
         # Register Korean font (try multiple locations)
         font_registered = False
         korean_fonts = [
@@ -72,37 +75,37 @@ class SummaryService:
             r"C:\Windows\Fonts\gulim.ttc",
             r"C:\Windows\Fonts\batang.ttc",
         ]
-        
+
         for font_path in korean_fonts:
             if os.path.exists(font_path):
                 try:
-                    pdfmetrics.registerFont(TTFont('Korean', font_path))
+                    pdfmetrics.registerFont(TTFont("Korean", font_path))
                     font_registered = True
                     break
-                except:
+                except Exception:
                     continue
-        
+
         # Create PDF document
         doc = SimpleDocTemplate(temp_path, pagesize=A4)
         story = []
-        
+
         # Get styles
         styles = getSampleStyleSheet()
-        
+
         # Create custom styles with Korean font
         if font_registered:
             title_style = ParagraphStyle(
-                'CustomTitle',
-                parent=styles['Heading1'],
-                fontName='Korean',
+                "CustomTitle",
+                parent=styles["Heading1"],
+                fontName="Korean",
                 fontSize=18,
                 alignment=TA_CENTER,
                 spaceAfter=30,
             )
             body_style = ParagraphStyle(
-                'CustomBody',
-                parent=styles['Normal'],
-                fontName='Korean',
+                "CustomBody",
+                parent=styles["Normal"],
+                fontName="Korean",
                 fontSize=11,
                 alignment=TA_LEFT,
                 leading=16,
@@ -110,31 +113,31 @@ class SummaryService:
         else:
             # Fallback to default fonts (won't show Korean properly)
             title_style = ParagraphStyle(
-                'CustomTitle',
-                parent=styles['Heading1'],
+                "CustomTitle",
+                parent=styles["Heading1"],
                 fontSize=18,
                 alignment=TA_CENTER,
                 spaceAfter=30,
             )
             body_style = ParagraphStyle(
-                'CustomBody',
-                parent=styles['Normal'],
+                "CustomBody",
+                parent=styles["Normal"],
                 fontSize=11,
                 alignment=TA_LEFT,
                 leading=16,
             )
-        
+
         # Add title
         story.append(Paragraph(title, title_style))
         story.append(Spacer(1, 20))
-        
+
         # Add content (split by paragraphs)
-        paragraphs = text.split('\n')
+        paragraphs = text.split("\n")
         for para in paragraphs:
             if para.strip():
                 story.append(Paragraph(para, body_style))
                 story.append(Spacer(1, 12))
-        
+
         # Build PDF
         doc.build(story)
         return temp_path
