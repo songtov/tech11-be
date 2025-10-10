@@ -3,6 +3,7 @@ import re
 import tempfile
 import requests
 from datetime import datetime
+from pathlib import Path
 from typing import List, Dict, Any, Optional, TypedDict
 
 from dotenv import load_dotenv
@@ -288,8 +289,12 @@ def node_tts(state: AgentState) -> AgentState:
     script_clean = clean_text(script)
     tts = gTTS(text=script_clean, lang="ko")
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_mp3 = f"industry_explainer_{ts}.mp3"
-    tts.save(out_mp3)
+    
+    # output/tts 디렉토리에 저장
+    output_dir = Path("output/tts")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out_mp3 = output_dir / f"industry_explainer_{ts}.mp3"
+    tts.save(str(out_mp3))
     print(f"🎧 TTS 저장 완료: {out_mp3}")
     return {}
 
@@ -375,22 +380,28 @@ def run_multi_agent(pdf_path_or_url: str):
     # 실행
     final_state = workflow.invoke(init_state)
 
-    # 산출물 저장
+    # 산출물 저장 - output/tts 디렉토리에 저장
+    output_dir = Path("output/tts")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     if final_state.get("summary"):
-        with open(f"summary_{ts}.txt", "w", encoding="utf-8") as f:
+        summary_path = output_dir / f"summary_{ts}.txt"
+        with open(summary_path, "w", encoding="utf-8") as f:
             f.write(final_state["summary"])
-        print(f"📝 요약 저장: summary_{ts}.txt")
+        print(f"📝 요약 저장: {summary_path}")
 
     if final_state.get("quiz"):
-        with open(f"quiz_{ts}.txt", "w", encoding="utf-8") as f:
+        quiz_path = output_dir / f"quiz_{ts}.txt"
+        with open(quiz_path, "w", encoding="utf-8") as f:
             f.write(final_state["quiz"])
-        print(f"📝 퀴즈 저장: quiz_{ts}.txt")
+        print(f"📝 퀴즈 저장: {quiz_path}")
 
     if final_state.get("explainer"):
-        with open(f"explainer_{ts}.txt", "w", encoding="utf-8") as f:
+        explainer_path = output_dir / f"explainer_{ts}.txt"
+        with open(explainer_path, "w", encoding="utf-8") as f:
             f.write(final_state["explainer"])
-        print(f"📝 해설 저장: explainer_{ts}.txt")
+        print(f"📝 해설 저장: {explainer_path}")
 
     print("🎉 모든 작업 완료!")
     return final_state
