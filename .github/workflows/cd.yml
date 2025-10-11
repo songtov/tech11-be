@@ -24,6 +24,7 @@ jobs:
           # Sync project files (fast incremental upload)
           rsync -avz --delete \
             --exclude '.env' \
+            --exclude 'app.db' \
             -e "ssh -o StrictHostKeyChecking=no" \
             ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.PROJECT_PATH }}
 
