@@ -1,5 +1,3 @@
-from typing import List
-
 import boto3
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -9,10 +7,8 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
 from app.schemas.research import (
-    ResearchCreate,
     ResearchDownload,
     ResearchDownloadResponse,
-    ResearchResponse,
     ResearchSearch,
     ResearchSearchResponse,
 )
