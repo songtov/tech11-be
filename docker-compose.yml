@@ -17,8 +17,6 @@ services:
     volumes:
       # Persist database
       - ./app.db:/app/app.db
-      # Persist downloaded research papers
-      - ./output:/app/output
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]

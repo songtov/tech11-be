@@ -31,6 +31,9 @@ COPY . .
 # Create output directory for research papers
 RUN mkdir -p /app/output/research
 
+# Make start script executable
+RUN chmod +x start.sh
+
 # Create a non-root user to run the application
 RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
@@ -45,6 +48,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/ || exit 1
 
-# Run the application
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the application using start script
+CMD ["./start.sh"]
 

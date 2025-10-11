@@ -24,7 +24,7 @@ router = APIRouter()
 @router.post(
     "/research_search",
     response_model=ResearchSearchResponse,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_200_OK,
 )
 def search_research(research: ResearchSearch, db: Session = Depends(get_db)):
     """Search for research entries"""
@@ -65,32 +65,13 @@ def download_research(research: ResearchDownload, db: Session = Depends(get_db))
     return service.download_research(research)
 
 
-@router.post(
-    "/research", response_model=ResearchResponse, status_code=status.HTTP_201_CREATED
-)
-def create_research(research: ResearchCreate, db: Session = Depends(get_db)):
-    """Create a new research entry"""
-    service = ResearchService(db)
-    return service.create_research(research)
-
-
-@router.get("/research/{research_id}", response_model=ResearchResponse)
-def get_research(research_id: int, db: Session = Depends(get_db)):
-    """Get a research entry by ID"""
-    service = ResearchService(db)
-    research = service.get_research(research_id)
-    if not research:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Research not found"
-        )
-    return research
-
-
-@router.get("/research", response_model=List[ResearchResponse])
-def get_all_research(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """Get all research entries with pagination"""
-    service = ResearchService(db)
-    return service.get_all_research(skip=skip, limit=limit)
+# @router.post(
+#     "/research", response_model=ResearchResponse, status_code=status.HTTP_201_CREATED
+# )
+# def create_research(research: ResearchCreate, db: Session = Depends(get_db)):
+#     """Create a new research entry"""
+#     service = ResearchService(db)
+#     return service.create_research(research)
 
 
 @router.get("/research/files/{filename}")
