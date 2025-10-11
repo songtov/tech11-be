@@ -3,7 +3,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
 from xml.etree import ElementTree as ET
 
@@ -13,7 +13,9 @@ from botocore.exceptions import ClientError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.domain.research_domain import PaperData, ResearchDomain
 from app.models.research import Research
+from app.repositories.research_repository import ResearchRepository
 from app.schemas.research import (
     DomainEnum,
     ResearchCreate,
@@ -453,6 +455,8 @@ class SimplifiedScholarAgent:
 class ResearchService:
     def __init__(self, db: Session):
         self.db = db
+        self.repository = ResearchRepository(db)
+        self.domain_logic = ResearchDomain()
         self.scholar_agent = SimplifiedScholarAgent()
 
     def create_research(self, research: ResearchCreate) -> Research:
@@ -464,61 +468,54 @@ class ResearchService:
         return db_research
 
     def search_research(self, research: ResearchSearch) -> ResearchSearchResponse:
-        """Search for research papers using the legacy scholar agent"""
+        """
+        Search for research papers with database caching
+        1. Check database cache first (by domain, for today)
+        2. If found >= 5 papers, return from database
+        3. If not found, fetch from APIs
+        4. Save to database and return
+        """
         logger.info(f"Starting research search for domain: {research.domain}")
 
         try:
-            # Use the scholar agent to fetch papers
+            # Step 1: Check database cache for today's date
+            today = date.today()
+            cached_papers = self.repository.get_by_domain_and_date(
+                research.domain, today
+            )
+
+            # Step 2: If we have enough cached papers, return them
+            if self.domain_logic.validate_paper_count(cached_papers, required_count=5):
+                logger.info(
+                    f"Found {len(cached_papers)} cached papers for domain {research.domain.value} from today"
+                )
+                research_responses = self.domain_logic.to_response_list(
+                    cached_papers[:5]
+                )
+                return ResearchSearchResponse(data=research_responses)
+
+            # Step 3: No cached papers or not enough, fetch from APIs
+            logger.info(
+                f"No sufficient cache found. Fetching papers from APIs for domain: {research.domain}"
+            )
             papers = self.scholar_agent.fetch_papers(research.domain)
 
             if not papers:
                 logger.warning(f"No papers found for domain: {research.domain}")
-                # Return empty response with 5 dummy entries to satisfy schema
-                dummy_responses = []
-                for i in range(5):
-                    dummy_responses.append(
-                        ResearchResponse(
-                            id=i + 1,
-                            title=f"No papers found for domain {research.domain.value}",
-                            abstract="No research papers were found for the specified domain. Please try a different domain or check back later.",
-                            authors=[],
-                            published_date=None,
-                            updated_date=None,
-                            categories=[],
-                            pdf_url=None,
-                            arxiv_url=None,
-                            citation_count=0,
-                            relevance_score=0.0,
-                            created_at=datetime.now(),
-                            updated_at=datetime.now(),
-                        )
-                    )
+                # Return dummy response
+                dummy_responses = self.domain_logic.create_dummy_response(
+                    research.domain,
+                    "No research papers were found for the specified domain. Please try a different domain or check back later.",
+                )
                 return ResearchSearchResponse(data=dummy_responses)
 
-            # Convert Paper objects to ResearchResponse objects
-            research_responses = []
-            for i, paper in enumerate(papers):
-                # Parse the published date
-                try:
-                    if paper.published_date:
-                        # Try to parse ISO format first
-                        if "T" in paper.published_date:
-                            created_at = datetime.fromisoformat(
-                                paper.published_date.replace("Z", "+00:00")
-                            )
-                        else:
-                            # Fallback to year-only format
-                            year = int(paper.published_date.split("-")[0])
-                            created_at = datetime(year, 1, 1)
-                    else:
-                        created_at = datetime.now()
-                except (ValueError, IndexError, AttributeError):
-                    created_at = datetime.now()
-
-                research_response = ResearchResponse(
-                    id=i + 1,  # Use index as ID since we don't store in DB
+            # Step 4: Save fetched papers to database
+            paper_data_list = []
+            for paper in papers:
+                paper_data = PaperData(
                     title=paper.title,
                     abstract=paper.abstract or "No abstract available",
+                    domain=research.domain.value,
                     authors=paper.authors,
                     published_date=paper.published_date,
                     updated_date=paper.updated_date,
@@ -527,10 +524,15 @@ class ResearchService:
                     arxiv_url=paper.arxiv_url,
                     citation_count=paper.citation_count,
                     relevance_score=paper.relevance_score,
-                    created_at=created_at,
-                    updated_at=created_at,
                 )
-                research_responses.append(research_response)
+                paper_data_list.append(self.domain_logic.paper_to_dict(paper_data))
+
+            # Bulk insert into database
+            saved_papers = self.repository.create_bulk(paper_data_list)
+            logger.info(f"Saved {len(saved_papers)} papers to database")
+
+            # Step 5: Convert to response and return
+            research_responses = self.domain_logic.to_response_list(saved_papers)
 
             # Ensure exactly 5 responses (pad with dummy if needed)
             while len(research_responses) < 5:
@@ -561,25 +563,10 @@ class ResearchService:
         except Exception as e:
             logger.error(f"Error in research search: {e}")
             # Return error response with 5 dummy entries
-            error_responses = []
-            for i in range(5):
-                error_responses.append(
-                    ResearchResponse(
-                        id=i + 1,
-                        title=f"Search Error for {research.domain.value}",
-                        abstract=f"An error occurred while searching for research papers: {str(e)}. Please try again later.",
-                        authors=[],
-                        published_date=None,
-                        updated_date=None,
-                        categories=[],
-                        pdf_url=None,
-                        arxiv_url=None,
-                        citation_count=0,
-                        relevance_score=0.0,
-                        created_at=datetime.now(),
-                        updated_at=datetime.now(),
-                    )
-                )
+            error_responses = self.domain_logic.create_dummy_response(
+                research.domain,
+                f"An error occurred while searching for research papers: {str(e)}. Please try again later.",
+            )
             return ResearchSearchResponse(data=error_responses)
 
     def download_research(self, research: ResearchDownload) -> ResearchDownloadResponse:
@@ -639,6 +626,17 @@ class ResearchService:
             try:
                 s3_client.head_object(Bucket=settings.S3_BUCKET, Key=s3_key)
                 logger.info(f"File already exists in S3: {s3_key}")
+
+                # Update database with S3 object_key if not already set
+                if research.arxiv_url:
+                    updated_research = self.repository.update_object_key(
+                        research.arxiv_url, s3_key
+                    )
+                    if updated_research:
+                        logger.info(
+                            f"✅ Updated research database with object_key: {s3_key}"
+                        )
+
                 download_url = f"/research/files/{filename}"
                 return ResearchDownloadResponse(
                     output_path=f"s3://{settings.S3_BUCKET}/{s3_key}",
@@ -715,6 +713,20 @@ class ResearchService:
             except Exception as e:
                 raise ValueError(f"Failed to upload PDF to S3: {str(e)}")
 
+            # Update database with S3 object_key
+            if research.arxiv_url:
+                updated_research = self.repository.update_object_key(
+                    research.arxiv_url, s3_key
+                )
+                if updated_research:
+                    logger.info(
+                        f"✅ Updated research database with object_key: {s3_key}"
+                    )
+                else:
+                    logger.warning(
+                        f"⚠️ Could not find research in database with arxiv_url: {research.arxiv_url}"
+                    )
+
             # Generate download URL for frontend
             download_url = f"/research/files/{filename}"
 
@@ -735,34 +747,27 @@ class ResearchService:
 
     def get_research(self, research_id: int) -> Optional[Research]:
         """Get a research entry by ID"""
-        return self.db.query(Research).filter(Research.id == research_id).first()
+        return self.repository.get_by_id(research_id)
 
     def get_all_research(self, skip: int = 0, limit: int = 100) -> List[Research]:
         """Get all research entries with pagination"""
-        return self.db.query(Research).offset(skip).limit(limit).all()
+        return self.repository.get_all(skip, limit)
 
     def update_research(
         self, research_id: int, research_update: ResearchUpdate
     ) -> Optional[Research]:
         """Update a research entry"""
-        db_research = self.get_research(research_id)
+        db_research = self.repository.get_by_id(research_id)
         if not db_research:
             return None
 
         update_data = research_update.model_dump(exclude_unset=True)
-        for field, value in update_data.items():
-            setattr(db_research, field, value)
-
-        self.db.commit()
-        self.db.refresh(db_research)
-        return db_research
+        return self.repository.update(db_research, update_data)
 
     def delete_research(self, research_id: int) -> bool:
         """Delete a research entry"""
-        db_research = self.get_research(research_id)
+        db_research = self.repository.get_by_id(research_id)
         if not db_research:
             return False
 
-        self.db.delete(db_research)
-        self.db.commit()
-        return True
+        return self.repository.delete(db_research)
