@@ -13,11 +13,11 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.repositories.research_repository import ResearchRepository
 from app.schemas.quiz import QuestionResponse, QuizCreate, QuizResponse
-from sqlalchemy.orm import Session
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
