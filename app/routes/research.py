@@ -108,8 +108,6 @@ def download_research_by_id(
         )
 
 
-
-
 @router.get("/research/files/{filename}")
 def download_research_file(filename: str):
     """
