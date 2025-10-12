@@ -29,7 +29,7 @@ def search_research(research: ResearchSearch, db: Session = Depends(get_db)):
     response_model=ResearchDownloadResponse,
     status_code=status.HTTP_200_OK,
 )
-def download_research_by_id(research_id: int, db: Session = Depends(get_db)):
+def download_research_by_id_to_s3(research_id: int, db: Session = Depends(get_db)):
     """
     Download a research paper PDF by research ID and upload to S3 bucket (RECOMMENDED)
 
@@ -68,8 +68,8 @@ def download_research_by_id(research_id: int, db: Session = Depends(get_db)):
         )
 
 
-@router.get("/research/files/{research_id}")
-def download_research_file_by_id(research_id: int, db: Session = Depends(get_db)):
+@router.get("/research/serve/{research_id}")
+def serve_research_file_by_id_from_s3(research_id: int, db: Session = Depends(get_db)):
     """
     Serve a downloaded research PDF file from S3 bucket by research ID (RECOMMENDED)
 
