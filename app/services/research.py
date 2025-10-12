@@ -745,6 +745,62 @@ class ResearchService:
         except Exception as e:
             raise ValueError(f"Failed to download PDF: {str(e)}")
 
+    def download_research_by_id(self, research_id: int) -> ResearchDownloadResponse:
+        """Download a research paper PDF by research ID and upload to S3 bucket"""
+        try:
+            # 1. Fetch research from database
+            logger.info(f"🔍 Fetching research with ID: {research_id}")
+            research = self.repository.get_by_id(research_id)
+
+            if not research:
+                raise ValueError(f"Research with ID {research_id} not found")
+
+            # 2. Validate research has pdf_url field
+            if not research.pdf_url:
+                raise ValueError(
+                    f"Research with ID {research_id} does not have a PDF URL (missing pdf_url)"
+                )
+
+            # 3. Create ResearchDownload object from research data
+            research_download = ResearchDownload(
+                pdf_url=research.pdf_url,
+                arxiv_url=research.arxiv_url or "",
+                title=research.title,
+            )
+
+            logger.info(f"📄 Downloading PDF for research: {research.title}")
+
+            # 4. Use existing download logic
+            result = self.download_research(research_download)
+
+            # 5. Update the research record's object_key using the research ID
+            # Extract the s3_key from the result
+            s3_uri = result.output_path
+            s3_key = s3_uri.replace(f"s3://{settings.S3_BUCKET}/", "")
+
+            # Update the research record directly using the research ID
+            if research.arxiv_url:
+                updated_research = self.repository.update_object_key(
+                    research.arxiv_url, s3_key
+                )
+                if updated_research:
+                    logger.info(
+                        f"✅ Updated research ID {research_id} with object_key: {s3_key}"
+                    )
+                else:
+                    logger.warning(
+                        f"⚠️ Could not update research ID {research_id} with object_key"
+                    )
+
+            return result
+
+        except ValueError as e:
+            logger.error(f"❌ Research download by ID failed: {e}")
+            raise e
+        except Exception as e:
+            logger.error(f"❌ Research download by ID failed: {e}")
+            raise ValueError(f"Failed to download research PDF: {str(e)}")
+
     def get_research(self, research_id: int) -> Optional[Research]:
         """Get a research entry by ID"""
         return self.repository.get_by_id(research_id)

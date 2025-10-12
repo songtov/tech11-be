@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.schemas.research import (
     ResearchDownload,
+    ResearchDownloadByIdRequest,
     ResearchDownloadResponse,
     ResearchSearch,
     ResearchSearchResponse,
@@ -61,13 +62,52 @@ def download_research(research: ResearchDownload, db: Session = Depends(get_db))
     return service.download_research(research)
 
 
-# @router.post(
-#     "/research", response_model=ResearchResponse, status_code=status.HTTP_201_CREATED
-# )
-# def create_research(research: ResearchCreate, db: Session = Depends(get_db)):
-#     """Create a new research entry"""
-#     service = ResearchService(db)
-#     return service.create_research(research)
+@router.post(
+    "/research/download-by-id",
+    response_model=ResearchDownloadResponse,
+    status_code=status.HTTP_200_OK,
+)
+def download_research_by_id(
+    request: ResearchDownloadByIdRequest, db: Session = Depends(get_db)
+):
+    """
+    Download a research paper PDF by research ID and upload to S3 bucket (RECOMMENDED)
+
+    This endpoint fetches a research entry by ID from the database and downloads its PDF
+    to the S3 bucket at path: <bucket_name>/output/research/<filename>.pdf
+
+    The research must have a pdf_url field populated with the PDF download URL.
+
+    Args:
+        request: ResearchDownloadByIdRequest containing the research ID
+
+    Returns:
+        ResearchDownloadResponse with:
+        - output_path: S3 URI (s3://<bucket>/output/research/<filename>.pdf)
+        - download_url: API endpoint to download the file (/research/files/<filename>)
+        - filename: The generated PDF filename
+
+    Raises:
+        HTTPException: 404 if research not found, 400 if missing pdf_url, 500 for other errors
+    """
+    try:
+        service = ResearchService(db)
+        return service.download_research_by_id(request.research_id)
+    except ValueError as e:
+        error_msg = str(e)
+        if "not found" in error_msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_msg)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}",
+        )
+
+
 
 
 @router.get("/research/files/{filename}")
