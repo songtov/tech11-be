@@ -21,6 +21,12 @@ class QuizFilenameRequest(BaseModel):
     )
 
 
+class QuizResearchRequest(BaseModel):
+    research_id: int = Field(
+        ..., description="ID of the research entry to generate quiz from", gt=0
+    )
+
+
 class QuestionResponse(BaseModel):
     question: str = Field(..., description="The quiz question")
     answer: str = Field(..., description="The correct answer")

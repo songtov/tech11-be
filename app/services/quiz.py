@@ -13,8 +13,10 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.repositories.research_repository import ResearchRepository
 from app.schemas.quiz import QuestionResponse, QuizCreate, QuizResponse
 
 # Set up logging
@@ -23,7 +25,9 @@ logger = logging.getLogger(__name__)
 
 
 class QuizService:
-    def __init__(self):
+    def __init__(self, db: Session):
+        self.db = db
+        self.research_repository = ResearchRepository(db)
         self.llm_mini = self._get_llm(temperature=0.2, use_mini=True)
         self.embeddings = self._get_embeddings()
 
@@ -308,6 +312,39 @@ O/X 퀴즈를 작성해 주세요.
             if temp_pdf_path and os.path.exists(temp_pdf_path):
                 os.unlink(temp_pdf_path)
                 logger.info(f"🗑️ 임시 PDF 파일 삭제: {temp_pdf_path}")
+
+    def create_quiz_from_research_id(self, research_id: int) -> QuizResponse:
+        """Create quiz from research ID by fetching research from database"""
+        try:
+            # 1. Fetch research from database
+            logger.info(f"🔍 Fetching research with ID: {research_id}")
+            research = self.research_repository.get_by_id(research_id)
+
+            if not research:
+                raise ValueError(f"Research with ID {research_id} not found")
+
+            # 2. Validate research has object_key (S3 filename)
+            if not research.object_key:
+                raise ValueError(
+                    f"Research with ID {research_id} does not have an associated PDF file (missing object_key)"
+                )
+
+            # 3. Extract filename from object_key
+            # object_key format: "output/research/filename.pdf"
+            object_key = research.object_key
+            filename = object_key.split("/")[-1] if "/" in object_key else object_key
+
+            logger.info(f"📄 Using filename from research object_key: {filename}")
+
+            # 4. Generate quiz using existing S3 method
+            return self.create_quiz_from_s3(filename)
+
+        except ValueError as e:
+            logger.error(f"❌ Research validation failed: {e}")
+            raise e
+        except Exception as e:
+            logger.error(f"❌ Quiz generation from research ID failed: {e}")
+            raise ValueError(f"퀴즈 생성 중 오류가 발생했습니다: {str(e)}")
 
     def create_quiz(self, quiz: QuizCreate) -> QuizResponse:
         """Create quiz from PDF file (legacy method for backward compatibility)"""

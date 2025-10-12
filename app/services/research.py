@@ -745,6 +745,62 @@ class ResearchService:
         except Exception as e:
             raise ValueError(f"Failed to download PDF: {str(e)}")
 
+    def download_research_by_id(self, research_id: int) -> ResearchDownloadResponse:
+        """Download a research paper PDF by research ID and upload to S3 bucket"""
+        try:
+            # 1. Fetch research from database
+            logger.info(f"🔍 Fetching research with ID: {research_id}")
+            research = self.repository.get_by_id(research_id)
+
+            if not research:
+                raise ValueError(f"Research with ID {research_id} not found")
+
+            # 2. Validate research has pdf_url field
+            if not research.pdf_url:
+                raise ValueError(
+                    f"Research with ID {research_id} does not have a PDF URL (missing pdf_url)"
+                )
+
+            # 3. Create ResearchDownload object from research data
+            research_download = ResearchDownload(
+                pdf_url=research.pdf_url,
+                arxiv_url=research.arxiv_url or "",
+                title=research.title,
+            )
+
+            logger.info(f"📄 Downloading PDF for research: {research.title}")
+
+            # 4. Use existing download logic
+            result = self.download_research(research_download)
+
+            # 5. Update the research record's object_key using the research ID
+            # Extract the s3_key from the result
+            s3_uri = result.output_path
+            s3_key = s3_uri.replace(f"s3://{settings.S3_BUCKET}/", "")
+
+            # Update the research record directly using the research ID
+            if research.arxiv_url:
+                updated_research = self.repository.update_object_key(
+                    research.arxiv_url, s3_key
+                )
+                if updated_research:
+                    logger.info(
+                        f"✅ Updated research ID {research_id} with object_key: {s3_key}"
+                    )
+                else:
+                    logger.warning(
+                        f"⚠️ Could not update research ID {research_id} with object_key"
+                    )
+
+            return result
+
+        except ValueError as e:
+            logger.error(f"❌ Research download by ID failed: {e}")
+            raise e
+        except Exception as e:
+            logger.error(f"❌ Research download by ID failed: {e}")
+            raise ValueError(f"Failed to download research PDF: {str(e)}")
+
     def get_research(self, research_id: int) -> Optional[Research]:
         """Get a research entry by ID"""
         return self.repository.get_by_id(research_id)
@@ -771,3 +827,76 @@ class ResearchService:
             return False
 
         return self.repository.delete(db_research)
+
+    def get_research_file_stream(self, research_id: int):
+        """Get research PDF file stream from S3 by research ID"""
+        try:
+            # 1. Fetch research from database
+            logger.info(f"🔍 Fetching research with ID: {research_id}")
+            research = self.repository.get_by_id(research_id)
+
+            if not research:
+                raise ValueError(f"Research with ID {research_id} not found")
+
+            # 2. Validate research has object_key field
+            if not research.object_key:
+                raise ValueError(
+                    f"Research with ID {research_id} does not have an associated PDF file (missing object_key)"
+                )
+
+            # 3. Extract filename from object_key
+            # object_key format: "output/research/filename.pdf"
+            object_key = research.object_key
+            filename = object_key.split("/")[-1] if "/" in object_key else object_key
+
+            # 4. Security: Validate PDF extension
+            if not filename.lower().endswith(".pdf"):
+                raise ValueError("Only PDF files are allowed")
+
+            # 5. Security: Prevent path traversal attacks
+            if "/" in filename or "\\" in filename or ".." in filename:
+                raise ValueError("Invalid filename")
+
+            logger.info(f"📄 Retrieving PDF file: {filename}")
+
+            # 6. Validate S3 configuration
+            if not settings.S3_BUCKET:
+                raise ValueError(
+                    "S3_BUCKET environment variable is not configured. "
+                    "Please set S3_BUCKET in your environment variables."
+                )
+            if not settings.AWS_ACCESS_KEY or not settings.AWS_SECRET_KEY:
+                raise ValueError(
+                    "AWS credentials are not configured. "
+                    "Please set AWS_ACCESS_KEY and AWS_SECRET_KEY in your environment variables."
+                )
+
+            # 7. Initialize S3 client
+            s3_client = boto3.client(
+                "s3",
+                aws_access_key_id=settings.AWS_ACCESS_KEY,
+                aws_secret_access_key=settings.AWS_SECRET_KEY,
+            )
+
+            # 8. Get file from S3
+            try:
+                response = s3_client.get_object(
+                    Bucket=settings.S3_BUCKET, Key=object_key
+                )
+                file_stream = response["Body"]
+                logger.info(f"✅ Successfully retrieved file from S3: {object_key}")
+                return file_stream, filename
+
+            except ClientError as e:
+                error_code = e.response.get("Error", {}).get("Code", "")
+                if error_code == "NoSuchKey":
+                    raise ValueError(f"File not found in S3 bucket: {object_key}")
+                else:
+                    raise ValueError(f"Error accessing S3: {str(e)}")
+
+        except ValueError as e:
+            logger.error(f"❌ Research file stream retrieval failed: {e}")
+            raise e
+        except Exception as e:
+            logger.error(f"❌ Research file stream retrieval failed: {e}")
+            raise ValueError(f"Failed to retrieve research file: {str(e)}")

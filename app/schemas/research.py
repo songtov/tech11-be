@@ -61,6 +61,12 @@ class ResearchDownload(BaseModel):
     title: Optional[str] = None
 
 
+class ResearchDownloadByIdRequest(BaseModel):
+    research_id: int = Field(
+        ..., description="ID of the research entry to download PDF for", gt=0
+    )
+
+
 class ResearchDownloadResponse(BaseModel):
     output_path: str = Field(
         ..., description="Absolute path to the downloaded PDF file"

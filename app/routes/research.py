@@ -1,20 +1,16 @@
-import boto3
-from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.database import get_db
 from app.schemas.research import (
-    ResearchDownload,
     ResearchDownloadResponse,
     ResearchSearch,
     ResearchSearchResponse,
 )
 from app.services.research import ResearchService
 
-router = APIRouter()
+router = APIRouter(tags=["research"])
 
 
 @router.post(
@@ -29,24 +25,21 @@ def search_research(research: ResearchSearch, db: Session = Depends(get_db)):
 
 
 @router.post(
-    "/research_download",
+    "/research/download/{research_id}",
     response_model=ResearchDownloadResponse,
     status_code=status.HTTP_200_OK,
 )
-def download_research(research: ResearchDownload, db: Session = Depends(get_db)):
+def download_research_by_id_to_s3(research_id: int, db: Session = Depends(get_db)):
     """
-    Download a research paper PDF and upload to S3 bucket
+    Download a research paper PDF by research ID and upload to S3 bucket (RECOMMENDED)
 
-    This endpoint downloads a research paper PDF from the provided URL and uploads it to
-    the S3 bucket at path: <bucket_name>/output/research/<filename>.pdf
+    This endpoint fetches a research entry by ID from the database and downloads its PDF
+    to the S3 bucket at path: <bucket_name>/output/research/<filename>.pdf
 
-    The filename is generated based on:
-    1. Research title (if provided) - cleaned and truncated to 100 characters
-    2. arXiv ID (extracted from arxiv_url) - as fallback
-    3. Timestamp - as final fallback
+    The research must have a pdf_url field populated with the PDF download URL.
 
     Args:
-        research: ResearchDownload object containing pdf_url, arxiv_url, and optional title
+        request: ResearchDownloadByIdRequest containing the research ID
 
     Returns:
         ResearchDownloadResponse with:
@@ -55,79 +48,46 @@ def download_research(research: ResearchDownload, db: Session = Depends(get_db))
         - filename: The generated PDF filename
 
     Raises:
-        ValueError: If PDF download fails, URL is invalid, or S3 upload fails
+        HTTPException: 404 if research not found, 400 if missing pdf_url, 500 for other errors
     """
-    service = ResearchService(db)
-    return service.download_research(research)
+    try:
+        service = ResearchService(db)
+        return service.download_research_by_id(research_id)
+    except ValueError as e:
+        error_msg = str(e)
+        if "not found" in error_msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_msg)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}",
+        )
 
 
-# @router.post(
-#     "/research", response_model=ResearchResponse, status_code=status.HTTP_201_CREATED
-# )
-# def create_research(research: ResearchCreate, db: Session = Depends(get_db)):
-#     """Create a new research entry"""
-#     service = ResearchService(db)
-#     return service.create_research(research)
-
-
-@router.get("/research/files/{filename}")
-def download_research_file(filename: str):
+@router.get("/research/serve/{research_id}")
+def serve_research_file_by_id_from_s3(research_id: int, db: Session = Depends(get_db)):
     """
-    Serve a downloaded research PDF file from S3 bucket
+    Serve a downloaded research PDF file from S3 bucket by research ID (RECOMMENDED)
 
-    This endpoint serves PDF files that were uploaded to S3 via the /research_download endpoint.
-    Files are stored in the S3 bucket at path: output/research/<filename>
+    This endpoint fetches a research entry by ID from the database and serves its PDF
+    file from S3 bucket. The research must have an object_key field populated with the S3 path.
 
     Args:
-        filename: The name of the PDF file to download
+        research_id: The ID of the research entry to download PDF for
 
     Returns:
         StreamingResponse: The PDF file for download from S3
 
     Raises:
-        HTTPException: If the file is not found or is not a PDF
+        HTTPException: 404 if research not found or file not found, 400 if missing object_key, 500 for other errors
     """
-    # Security: Only serve PDF files
-    if not filename.lower().endswith(".pdf"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Only PDF files are allowed"
-        )
-
-    # Security: Prevent path traversal attacks
-    if "/" in filename or "\\" in filename or ".." in filename:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid filename"
-        )
-
     try:
-        # Initialize S3 client
-        s3_client = boto3.client(
-            "s3",
-            aws_access_key_id=settings.AWS_ACCESS_KEY,
-            aws_secret_access_key=settings.AWS_SECRET_KEY,
-        )
-
-        # Construct S3 key path
-        s3_key = f"output/research/{filename}"
-
-        # Try to get the file from S3
-        try:
-            response = s3_client.get_object(Bucket=settings.S3_BUCKET, Key=s3_key)
-        except ClientError as e:
-            error_code = e.response.get("Error", {}).get("Code", "")
-            if error_code == "NoSuchKey":
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="File not found in S3 bucket",
-                )
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Error accessing S3: {str(e)}",
-                )
-
-        # Stream the file content from S3
-        file_stream = response["Body"]
+        service = ResearchService(db)
+        file_stream, filename = service.get_research_file_stream(research_id)
 
         # Return as streaming response
         return StreamingResponse(
@@ -136,10 +96,16 @@ def download_research_file(filename: str):
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
-    except HTTPException:
-        raise
+    except ValueError as e:
+        error_msg = str(e)
+        if "not found" in error_msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_msg)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg
+            )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error downloading file from S3: {str(e)}",
+            detail=f"Error retrieving research file: {str(e)}",
         )

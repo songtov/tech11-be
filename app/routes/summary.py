@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, status
 from app.schemas.summary import SummaryCreate, SummaryResponse
 from app.services.summary import SummaryService
 
-router = APIRouter()
+router = APIRouter(tags=["summary"])
 
 
 @router.post(
