@@ -827,3 +827,76 @@ class ResearchService:
             return False
 
         return self.repository.delete(db_research)
+
+    def get_research_file_stream(self, research_id: int):
+        """Get research PDF file stream from S3 by research ID"""
+        try:
+            # 1. Fetch research from database
+            logger.info(f"🔍 Fetching research with ID: {research_id}")
+            research = self.repository.get_by_id(research_id)
+
+            if not research:
+                raise ValueError(f"Research with ID {research_id} not found")
+
+            # 2. Validate research has object_key field
+            if not research.object_key:
+                raise ValueError(
+                    f"Research with ID {research_id} does not have an associated PDF file (missing object_key)"
+                )
+
+            # 3. Extract filename from object_key
+            # object_key format: "output/research/filename.pdf"
+            object_key = research.object_key
+            filename = object_key.split("/")[-1] if "/" in object_key else object_key
+
+            # 4. Security: Validate PDF extension
+            if not filename.lower().endswith(".pdf"):
+                raise ValueError("Only PDF files are allowed")
+
+            # 5. Security: Prevent path traversal attacks
+            if "/" in filename or "\\" in filename or ".." in filename:
+                raise ValueError("Invalid filename")
+
+            logger.info(f"📄 Retrieving PDF file: {filename}")
+
+            # 6. Validate S3 configuration
+            if not settings.S3_BUCKET:
+                raise ValueError(
+                    "S3_BUCKET environment variable is not configured. "
+                    "Please set S3_BUCKET in your environment variables."
+                )
+            if not settings.AWS_ACCESS_KEY or not settings.AWS_SECRET_KEY:
+                raise ValueError(
+                    "AWS credentials are not configured. "
+                    "Please set AWS_ACCESS_KEY and AWS_SECRET_KEY in your environment variables."
+                )
+
+            # 7. Initialize S3 client
+            s3_client = boto3.client(
+                "s3",
+                aws_access_key_id=settings.AWS_ACCESS_KEY,
+                aws_secret_access_key=settings.AWS_SECRET_KEY,
+            )
+
+            # 8. Get file from S3
+            try:
+                response = s3_client.get_object(
+                    Bucket=settings.S3_BUCKET, Key=object_key
+                )
+                file_stream = response["Body"]
+                logger.info(f"✅ Successfully retrieved file from S3: {object_key}")
+                return file_stream, filename
+
+            except ClientError as e:
+                error_code = e.response.get("Error", {}).get("Code", "")
+                if error_code == "NoSuchKey":
+                    raise ValueError(f"File not found in S3 bucket: {object_key}")
+                else:
+                    raise ValueError(f"Error accessing S3: {str(e)}")
+
+        except ValueError as e:
+            logger.error(f"❌ Research file stream retrieval failed: {e}")
+            raise e
+        except Exception as e:
+            logger.error(f"❌ Research file stream retrieval failed: {e}")
+            raise ValueError(f"Failed to retrieve research file: {str(e)}")

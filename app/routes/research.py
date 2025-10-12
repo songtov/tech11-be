@@ -15,7 +15,7 @@ from app.schemas.research import (
 )
 from app.services.research import ResearchService
 
-router = APIRouter()
+router = APIRouter(tags=["research"])
 
 
 @router.post(
@@ -108,13 +108,58 @@ def download_research_by_id(
         )
 
 
-@router.get("/research/files/{filename}")
+@router.get("/research/files/{research_id}")
+def download_research_file_by_id(research_id: int, db: Session = Depends(get_db)):
+    """
+    Serve a downloaded research PDF file from S3 bucket by research ID (RECOMMENDED)
+
+    This endpoint fetches a research entry by ID from the database and serves its PDF
+    file from S3 bucket. The research must have an object_key field populated with the S3 path.
+
+    Args:
+        research_id: The ID of the research entry to download PDF for
+
+    Returns:
+        StreamingResponse: The PDF file for download from S3
+
+    Raises:
+        HTTPException: 404 if research not found or file not found, 400 if missing object_key, 500 for other errors
+    """
+    try:
+        service = ResearchService(db)
+        file_stream, filename = service.get_research_file_stream(research_id)
+
+        # Return as streaming response
+        return StreamingResponse(
+            file_stream,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    except ValueError as e:
+        error_msg = str(e)
+        if "not found" in error_msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=error_msg)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=error_msg
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving research file: {str(e)}",
+        )
+
+
+@router.get("/research/files/legacy/{filename}")
 def download_research_file(filename: str):
     """
-    Serve a downloaded research PDF file from S3 bucket
+    Serve a downloaded research PDF file from S3 bucket (LEGACY - for backward compatibility)
 
     This endpoint serves PDF files that were uploaded to S3 via the /research_download endpoint.
     Files are stored in the S3 bucket at path: output/research/<filename>
+
+    Use /research/files/{research_id} for new implementations.
 
     Args:
         filename: The name of the PDF file to download
