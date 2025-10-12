@@ -1,14 +1,9 @@
-import boto3
-from botocore.exceptions import ClientError
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.database import get_db
 from app.schemas.research import (
-    ResearchDownload,
-    ResearchDownloadByIdRequest,
     ResearchDownloadResponse,
     ResearchSearch,
     ResearchSearchResponse,
@@ -29,15 +24,12 @@ def search_research(research: ResearchSearch, db: Session = Depends(get_db)):
     return service.search_research(research)
 
 
-
 @router.post(
     "/research/download/{research_id}",
     response_model=ResearchDownloadResponse,
     status_code=status.HTTP_200_OK,
 )
-def download_research_by_id(
-    research_id: int, db: Session = Depends(get_db)
-):
+def download_research_by_id(research_id: int, db: Session = Depends(get_db)):
     """
     Download a research paper PDF by research ID and upload to S3 bucket (RECOMMENDED)
 
