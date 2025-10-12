@@ -1,25 +1,30 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
 
-from app.schemas.quiz import QuizCreate, QuizFilenameRequest, QuizResponse
+from app.core.database import get_db
+from app.schemas.quiz import QuizCreate, QuizResearchRequest, QuizResponse
 from app.services.quiz import QuizService
 
 router = APIRouter(tags=["quiz"])
 
 
 @router.post(
-    "/quiz/from-s3",
+    "/quiz/from-research",
     response_model=QuizResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_quiz_from_s3(request: QuizFilenameRequest):
+def create_quiz_from_research(
+    request: QuizResearchRequest, db: Session = Depends(get_db)
+):
     """
-    Generate quiz from PDF file in S3 bucket (RECOMMENDED)
+    Generate quiz from research ID (RECOMMENDED)
 
-    Provide the filename of the PDF stored in S3 bucket at s3://bucket/output/research/
+    Provide the research ID to fetch the associated PDF file from S3 bucket.
+    The research must have an object_key field populated with the S3 path.
     """
     try:
-        service = QuizService()
-        return service.create_quiz_from_s3(request.filename)
+        service = QuizService(db)
+        return service.create_quiz_from_research_id(request.research_id)
     except FileNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except ValueError as e:
@@ -36,14 +41,14 @@ def create_quiz_from_s3(request: QuizFilenameRequest):
     response_model=QuizResponse,
     status_code=status.HTTP_201_CREATED,
 )
-def create_quiz(quiz: QuizCreate):
+def create_quiz(quiz: QuizCreate, db: Session = Depends(get_db)):
     """
     Generate quiz from PDF file (LEGACY - for backward compatibility)
 
-    Use /quiz/from-s3 for new implementations
+    Use /quiz/from-research for new implementations
     """
     try:
-        service = QuizService()
+        service = QuizService(db)
         return service.create_quiz(quiz)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
