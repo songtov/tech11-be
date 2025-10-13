@@ -61,7 +61,7 @@ async def create_tts_from_research_id(
 # 4️⃣ 음성 파일 다운로드
 # =====================================================
 @router.get("/stream/{filename}")
-def download_tts(filename: str):
+def stream_tts(filename: str):
     """
     🎧 생성된 음성 파일 스트리밍
     """
