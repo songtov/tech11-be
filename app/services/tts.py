@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.repositories.research_repository import ResearchRepository
+from app.repositories.tts_repository import TTSRepository
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -39,8 +40,9 @@ class TTSService:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.legacy_papers_dir = Path("legacy/downloaded_papers")
 
-        # Initialize database repository if db session provided
+        # Initialize database repositories if db session provided
         self.research_repository = ResearchRepository(db) if db else None
+        self.tts_repository = TTSRepository(db) if db else None
 
         # Initialize S3 client
         self.s3_client = None
@@ -135,21 +137,19 @@ class TTSService:
         except Exception as e:
             raise ValueError(f"Failed to upload audio to S3: {str(e)}")
 
-    def _get_audio_url_from_s3(self, filename: str) -> str | None:
-        """Generate presigned URL for audio file in S3"""
+    def _get_audio_url_from_s3(self, object_key: str) -> str | None:
+        """Generate presigned URL for audio file in S3 using object_key"""
         if not settings.S3_BUCKET or not self.s3_client:
             return None
 
-        s3_key = f"output/tts/{filename}"
-
         try:
             # Check if file exists
-            self.s3_client.head_object(Bucket=settings.S3_BUCKET, Key=s3_key)
+            self.s3_client.head_object(Bucket=settings.S3_BUCKET, Key=object_key)
 
             # Generate presigned URL (valid for 1 hour)
             url = self.s3_client.generate_presigned_url(
                 "get_object",
-                Params={"Bucket": settings.S3_BUCKET, "Key": s3_key},
+                Params={"Bucket": settings.S3_BUCKET, "Key": object_key},
                 ExpiresIn=3600,
             )
             return url
@@ -385,37 +385,88 @@ class TTSService:
     # 5️⃣ Research ID 기반 TTS 생성
     # =====================================================
     async def create_tts_from_research_id(self, research_id: int) -> Dict[str, Any]:
-        """Create TTS from research ID by fetching research from database"""
+        """Create TTS from research ID with caching logic"""
         try:
-            # Validate database session and repository
-            if not self.db or not self.research_repository:
+            # Validate database session and repositories
+            if not self.db or not self.research_repository or not self.tts_repository:
                 raise ValueError(
                     "Database session is required for research_id operations. "
                     "Initialize TTSService with db parameter."
                 )
 
-            # 1. Fetch research from database
-            logger.info(f"🔍 Fetching research with ID: {research_id}")
+            # 1. Check cache first - look for existing TTS by research_id
+            logger.info(f"🔍 Checking TTS cache for research ID: {research_id}")
+            existing_tts = self.tts_repository.get_by_research_id(research_id)
+
+            if existing_tts:
+                logger.info(f"✅ Found cached TTS for research ID: {research_id}")
+                # Extract filename from object_key for presigned URL generation
+                object_key = existing_tts.object_key
+                filename = (
+                    object_key.split("/")[-1] if "/" in object_key else object_key
+                )
+
+                # Generate presigned URL for the cached audio file
+                presigned_url = self._get_audio_url_from_s3(object_key)
+
+                return {
+                    "id": existing_tts.id,
+                    "research_id": existing_tts.research_id,
+                    "summary": existing_tts.summary,
+                    "explainer": existing_tts.explainer,
+                    "audio_filename": filename,
+                    "s3_url": f"s3://{settings.S3_BUCKET}/{object_key}",
+                    "presigned_url": presigned_url,
+                }
+
+            # 2. No cache found - fetch research from database
+            logger.info(f"🔍 No cache found. Fetching research with ID: {research_id}")
             research = self.research_repository.get_by_id(research_id)
 
             if not research:
                 raise ValueError(f"Research with ID {research_id} not found")
 
-            # 2. Validate research has object_key (S3 filename)
+            # 3. Validate research has object_key (S3 filename)
             if not research.object_key:
                 raise ValueError(
                     f"Research with ID {research_id} does not have an associated PDF file (missing object_key)"
                 )
 
-            # 3. Extract filename from object_key
+            # 4. Extract filename from object_key
             # object_key format: "output/research/filename.pdf"
-            object_key = research.object_key
-            filename = object_key.split("/")[-1] if "/" in object_key else object_key
+            research_object_key = research.object_key
+            filename = (
+                research_object_key.split("/")[-1]
+                if "/" in research_object_key
+                else research_object_key
+            )
 
             logger.info(f"📄 Using filename from research object_key: {filename}")
 
-            # 4. Generate TTS using existing S3 method
-            return await self.process_pdf_from_s3_to_tts(filename)
+            # 5. Generate TTS using existing S3 method
+            logger.info(f"🎧 Generating new TTS for research ID: {research_id}")
+            tts_result = await self.process_pdf_from_s3_to_tts(filename)
+
+            # 6. Save TTS to database
+            if tts_result.get("audio_filename") and tts_result.get("s3_url"):
+                # Extract object_key from s3_url
+                s3_url = tts_result["s3_url"]
+                audio_object_key = s3_url.replace(f"s3://{settings.S3_BUCKET}/", "")
+
+                tts_data = {
+                    "research_id": research_id,
+                    "summary": tts_result.get("summary", ""),
+                    "explainer": tts_result.get("explainer", ""),
+                    "object_key": audio_object_key,
+                }
+
+                saved_tts = self.tts_repository.create(tts_data)
+                logger.info(f"✅ TTS saved to database with ID: {saved_tts.id}")
+
+                # Add tts_id to result
+                tts_result["tts_id"] = saved_tts.id
+
+            return tts_result
 
         except ValueError as e:
             logger.error(f"❌ Research validation failed: {e}")

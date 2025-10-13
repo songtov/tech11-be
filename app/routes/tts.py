@@ -32,10 +32,10 @@ async def create_tts_from_research_id(
         return JSONResponse(
             {
                 "message": "✅ TTS 생성 완료",
+                "id": result.get("id"),
                 "research_id": request.research_id,
                 "summary": result["summary"],
                 "explainer": result.get("explainer", ""),
-                "tts_id": result["tts_id"],
                 "audio_filename": result["audio_filename"],
                 "s3_url": result.get("s3_url"),
                 "presigned_url": result.get("presigned_url"),
