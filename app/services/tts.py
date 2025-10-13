@@ -335,7 +335,54 @@ class TTSService:
         return str(pdf_files[0]) if pdf_files else None
 
     # =====================================================
-    # 4️⃣ Research ID 기반 TTS 생성
+    # 4️⃣ TTS 파일 스트리밍
+    # =====================================================
+    def stream_audio_from_s3(self, filename: str) -> tuple[bytes, str, dict]:
+        """
+        Stream audio file from S3 bucket
+        Returns: (content_bytes, content_type, headers)
+        """
+        if not settings.S3_BUCKET:
+            raise ValueError("S3_BUCKET environment variable is not configured.")
+        if not self.s3_client:
+            raise ValueError("AWS credentials are not configured.")
+
+        # Construct S3 key for TTS files
+        s3_key = f"output/tts/{filename}"
+
+        logger.info(f"🎧 Streaming audio from S3: s3://{settings.S3_BUCKET}/{s3_key}")
+
+        try:
+            # Get object from S3
+            s3_obj = self.s3_client.get_object(Bucket=settings.S3_BUCKET, Key=s3_key)
+            content = s3_obj["Body"].read()
+
+            # Determine content type
+            import mimetypes
+
+            content_type = (
+                s3_obj.get("ContentType")
+                or mimetypes.guess_type(filename)[0]
+                or "application/octet-stream"
+            )
+
+            # Set headers
+            headers = {"Content-Disposition": f'inline; filename="{filename}"'}
+
+            logger.info(f"✅ Audio streamed successfully from S3: {filename}")
+            return content, content_type, headers
+
+        except ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code", "")
+            if error_code == "NoSuchKey":
+                raise FileNotFoundError(
+                    f"음성 파일 '{filename}'이 S3에 존재하지 않습니다."
+                )
+            else:
+                raise ValueError(f"S3 오류: {str(e)}")
+
+    # =====================================================
+    # 5️⃣ Research ID 기반 TTS 생성
     # =====================================================
     async def create_tts_from_research_id(self, research_id: int) -> Dict[str, Any]:
         """Create TTS from research ID by fetching research from database"""
