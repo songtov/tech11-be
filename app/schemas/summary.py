@@ -1,6 +1,12 @@
 from pydantic import BaseModel, Field, validator
 
 
+class SummaryResearchRequest(BaseModel):
+    research_id: int = Field(
+        ..., description="ID of the research entry to generate summary from", gt=0
+    )
+
+
 class SummaryCreate(BaseModel):
     filename: str = Field(
         ...,

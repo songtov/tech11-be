@@ -13,8 +13,10 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.repositories.research_repository import ResearchRepository
 from app.schemas.summary import SummaryCreate, SummaryResponse
 
 # Set up logging
@@ -23,7 +25,9 @@ logger = logging.getLogger(__name__)
 
 
 class SummaryService:
-    def __init__(self):
+    def __init__(self, db: Session):
+        self.db = db
+        self.research_repository = ResearchRepository(db)
         self.llm = AzureChatOpenAI(
             openai_api_version="2024-02-01",
             azure_deployment=settings.AOAI_DEPLOY_GPT4O,
@@ -230,3 +234,36 @@ class SummaryService:
             summary=summarized_text,
             pdf_link=pdf_path,
         )
+
+    def create_summary_from_research_id(self, research_id: int) -> SummaryResponse:
+        """Create summary from research ID by fetching research from database"""
+        try:
+            # 1. Fetch research from database
+            logger.info(f"🔍 Fetching research with ID: {research_id}")
+            research = self.research_repository.get_by_id(research_id)
+
+            if not research:
+                raise ValueError(f"Research with ID {research_id} not found")
+
+            # 2. Validate research has object_key (S3 filename)
+            if not research.object_key:
+                raise ValueError(
+                    f"Research with ID {research_id} does not have an associated PDF file (missing object_key)"
+                )
+
+            # 3. Extract filename from object_key
+            # object_key format: "output/research/filename.pdf"
+            object_key = research.object_key
+            filename = object_key.split("/")[-1] if "/" in object_key else object_key
+
+            logger.info(f"📄 Using filename from research object_key: {filename}")
+
+            # 4. Generate summary using existing method
+            return self.create_summary(SummaryCreate(filename=filename))
+
+        except ValueError as e:
+            logger.error(f"❌ Research validation failed: {e}")
+            raise e
+        except Exception as e:
+            logger.error(f"❌ Summary generation from research ID failed: {e}")
+            raise ValueError(f"요약 생성 중 오류가 발생했습니다: {str(e)}")
