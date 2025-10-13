@@ -63,7 +63,7 @@ async def create_tts_from_research_id(
 @router.get("/stream/{filename}")
 def download_tts(filename: str):
     """
-    🎧 생성된 음성 파일 다운로드
+    🎧 생성된 음성 파일 스트리밍
     """
     try:
         # Initialize S3 client
