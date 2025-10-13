@@ -55,14 +55,16 @@ async def create_tts_from_research_id(
 # =====================================================
 # 2️⃣ 음성 파일 스트리밍
 # =====================================================
-@router.get("/stream/{filename}")
-def stream_tts(filename: str, db: Session = Depends(get_db)):
+@router.get("/stream/{research_id}")
+def stream_tts(research_id: int, db: Session = Depends(get_db)):
     """
-    🎧 생성된 음성 파일 스트리밍
+    🎧 Research ID로 음성 파일 스트리밍
     """
     try:
         service = TTSService(db)
-        content, content_type, headers = service.stream_audio_from_s3(filename)
+        content, content_type, headers = service.stream_audio_by_research_id(
+            research_id
+        )
 
         return Response(
             content=content,

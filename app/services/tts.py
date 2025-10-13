@@ -292,7 +292,9 @@ class TTSService:
             s3_url = self._upload_audio_to_s3(temp_audio_path, audio_filename)
 
             # 8. Presigned URL 생성 (다운로드용)
-            presigned_url = self._get_audio_url_from_s3(audio_filename)
+            # Extract object_key from s3_url for presigned URL generation
+            audio_object_key = s3_url.replace(f"s3://{settings.S3_BUCKET}/", "")
+            presigned_url = self._get_audio_url_from_s3(audio_object_key)
 
             # 9. 로컬 임시 파일에도 저장 (선택사항)
             local_file_path = self.output_dir / audio_filename
@@ -337,9 +339,9 @@ class TTSService:
     # =====================================================
     # 4️⃣ TTS 파일 스트리밍
     # =====================================================
-    def stream_audio_from_s3(self, filename: str) -> tuple[bytes, str, dict]:
+    def stream_audio_from_s3(self, object_key: str) -> tuple[bytes, str, dict]:
         """
-        Stream audio file from S3 bucket
+        Stream audio file from S3 bucket using object_key
         Returns: (content_bytes, content_type, headers)
         """
         if not settings.S3_BUCKET:
@@ -347,19 +349,22 @@ class TTSService:
         if not self.s3_client:
             raise ValueError("AWS credentials are not configured.")
 
-        # Construct S3 key for TTS files
-        s3_key = f"output/tts/{filename}"
-
-        logger.info(f"🎧 Streaming audio from S3: s3://{settings.S3_BUCKET}/{s3_key}")
+        logger.info(
+            f"🎧 Streaming audio from S3: s3://{settings.S3_BUCKET}/{object_key}"
+        )
 
         try:
             # Get object from S3
-            s3_obj = self.s3_client.get_object(Bucket=settings.S3_BUCKET, Key=s3_key)
+            s3_obj = self.s3_client.get_object(
+                Bucket=settings.S3_BUCKET, Key=object_key
+            )
             content = s3_obj["Body"].read()
 
             # Determine content type
             import mimetypes
 
+            # Extract filename from object_key for content type detection
+            filename = object_key.split("/")[-1] if "/" in object_key else object_key
             content_type = (
                 s3_obj.get("ContentType")
                 or mimetypes.guess_type(filename)[0]
@@ -369,17 +374,50 @@ class TTSService:
             # Set headers
             headers = {"Content-Disposition": f'inline; filename="{filename}"'}
 
-            logger.info(f"✅ Audio streamed successfully from S3: {filename}")
+            logger.info(f"✅ Audio streamed successfully from S3: {object_key}")
             return content, content_type, headers
 
         except ClientError as e:
             error_code = e.response.get("Error", {}).get("Code", "")
             if error_code == "NoSuchKey":
                 raise FileNotFoundError(
-                    f"음성 파일 '{filename}'이 S3에 존재하지 않습니다."
+                    f"음성 파일 '{object_key}'이 S3에 존재하지 않습니다."
                 )
             else:
                 raise ValueError(f"S3 오류: {str(e)}")
+
+    def stream_audio_by_research_id(self, research_id: int) -> tuple[bytes, str, dict]:
+        """
+        Stream audio file by research_id using database lookup
+        Returns: (content_bytes, content_type, headers)
+        """
+        # Validate database session and repositories
+        if not self.db or not self.tts_repository:
+            raise ValueError(
+                "Database session is required for research_id operations. "
+                "Initialize TTSService with db parameter."
+            )
+
+        # 1. Retrieve TTS record from database
+        logger.info(f"🔍 Looking up TTS for research ID: {research_id}")
+        tts_record = self.tts_repository.get_by_research_id(research_id)
+
+        if not tts_record:
+            raise FileNotFoundError(
+                f"TTS audio not found for research ID {research_id}. "
+                "Please generate TTS first using POST /tts/ endpoint."
+            )
+
+        # 2. Validate object_key exists
+        if not tts_record.object_key:
+            raise ValueError(
+                f"TTS record for research ID {research_id} is missing object_key. "
+                "Cannot stream audio file."
+            )
+
+        # 3. Stream audio using object_key
+        logger.info(f"🎧 Streaming TTS audio for research ID: {research_id}")
+        return self.stream_audio_from_s3(tts_record.object_key)
 
     # =====================================================
     # 5️⃣ Research ID 기반 TTS 생성
