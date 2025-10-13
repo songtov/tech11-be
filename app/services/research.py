@@ -805,6 +805,10 @@ class ResearchService:
         """Get a research entry by ID"""
         return self.repository.get_by_id(research_id)
 
+    def get_research_by_id(self, research_id: int) -> Optional[Research]:
+        """Get a research entry by ID (alias for get_research for compatibility)"""
+        return self.repository.get_by_id(research_id)
+
     def get_all_research(self, skip: int = 0, limit: int = 100) -> List[Research]:
         """Get all research entries with pagination"""
         return self.repository.get_all(skip, limit)

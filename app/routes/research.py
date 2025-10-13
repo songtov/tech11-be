@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.schemas.research import (
     ResearchDownloadResponse,
+    ResearchResponse,
     ResearchSearch,
     ResearchSearchResponse,
 )
@@ -14,7 +15,7 @@ router = APIRouter(tags=["research"])
 
 
 @router.post(
-    "/research_search",
+    "/research/search",
     response_model=ResearchSearchResponse,
     status_code=status.HTTP_200_OK,
 )
@@ -109,3 +110,22 @@ def serve_research_file_by_id_from_s3(research_id: int, db: Session = Depends(ge
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error retrieving research file: {str(e)}",
         )
+
+
+@router.get(
+    "/research/{research_id}",
+    response_model=ResearchResponse,
+    status_code=status.HTTP_200_OK,
+)
+def show_research(research_id: int, db: Session = Depends(get_db)):
+    """Show research data by ID. Returns 404 if research not found."""
+    service = ResearchService(db)
+    research = service.get_research_by_id(research_id)
+
+    if not research:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Research with ID {research_id} not found",
+        )
+
+    return research
