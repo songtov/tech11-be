@@ -11,8 +11,10 @@ from typing import Any, Dict
 import boto3
 from botocore.exceptions import ClientError
 from gtts import gTTS
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.repositories.research_repository import ResearchRepository
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -31,10 +33,14 @@ def clean_text(text: str) -> str:
 
 
 class TTSService:
-    def __init__(self):
+    def __init__(self, db: Session = None):
+        self.db = db
         self.output_dir = Path("output/tts")
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.legacy_papers_dir = Path("legacy/downloaded_papers")
+
+        # Initialize database repository if db session provided
+        self.research_repository = ResearchRepository(db) if db else None
 
         # Initialize S3 client
         self.s3_client = None
@@ -327,3 +333,46 @@ class TTSService:
         """legacy/downloaded_papers 폴더의 첫 번째 PDF 반환"""
         pdf_files = list(self.legacy_papers_dir.glob("*.pdf"))
         return str(pdf_files[0]) if pdf_files else None
+
+    # =====================================================
+    # 4️⃣ Research ID 기반 TTS 생성
+    # =====================================================
+    async def create_tts_from_research_id(self, research_id: int) -> Dict[str, Any]:
+        """Create TTS from research ID by fetching research from database"""
+        try:
+            # Validate database session and repository
+            if not self.db or not self.research_repository:
+                raise ValueError(
+                    "Database session is required for research_id operations. "
+                    "Initialize TTSService with db parameter."
+                )
+
+            # 1. Fetch research from database
+            logger.info(f"🔍 Fetching research with ID: {research_id}")
+            research = self.research_repository.get_by_id(research_id)
+
+            if not research:
+                raise ValueError(f"Research with ID {research_id} not found")
+
+            # 2. Validate research has object_key (S3 filename)
+            if not research.object_key:
+                raise ValueError(
+                    f"Research with ID {research_id} does not have an associated PDF file (missing object_key)"
+                )
+
+            # 3. Extract filename from object_key
+            # object_key format: "output/research/filename.pdf"
+            object_key = research.object_key
+            filename = object_key.split("/")[-1] if "/" in object_key else object_key
+
+            logger.info(f"📄 Using filename from research object_key: {filename}")
+
+            # 4. Generate TTS using existing S3 method
+            return await self.process_pdf_from_s3_to_tts(filename)
+
+        except ValueError as e:
+            logger.error(f"❌ Research validation failed: {e}")
+            raise e
+        except Exception as e:
+            logger.error(f"❌ TTS generation from research ID failed: {e}")
+            raise ValueError(f"TTS 생성 중 오류가 발생했습니다: {str(e)}")

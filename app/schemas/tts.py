@@ -67,3 +67,9 @@ class TTSFilenameRequest(BaseModel):
     filename: str = Field(
         ..., description="Filename of the PDF in S3 bucket (e.g., 'myfile.pdf')"
     )
+
+
+class TTSResearchRequest(BaseModel):
+    research_id: int = Field(
+        ..., description="ID of the research entry to generate TTS from", gt=0
+    )

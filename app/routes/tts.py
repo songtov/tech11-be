@@ -1,131 +1,98 @@
-import os
+import mimetypes
+import boto3
+from botocore.exceptions import ClientError
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse, RedirectResponse, Response
+from sqlalchemy.orm import Session
 
-from fastapi import APIRouter, HTTPException, status
-from fastapi.responses import JSONResponse, RedirectResponse
-
-from app.schemas.tts import TTSFilenameRequest, TTSPdfPathRequest
+from app.core.config import settings
+from app.core.database import get_db
+from app.schemas.tts import TTSResearchRequest
 from app.services.tts import TTSService
 
 router = APIRouter(tags=["TTS"], prefix="/tts")
 
 
 # =====================================================
-# 1️⃣ S3 기반 PDF 파일 처리 (NEW - RECOMMENDED)
+# 1️⃣ Research ID 기반 TTS 생성 (RECOMMENDED)
 # =====================================================
-@router.post("/from-s3")
-async def create_tts_from_s3(request: TTSFilenameRequest):
+@router.post(
+    "/",
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_tts_from_research_id(
+    request: TTSResearchRequest, db: Session = Depends(get_db)
+):
     """
-    S3 PDF 파일명 입력 → S3에서 다운로드 → Multi-Agent 요약 → TTS 음성 생성 → S3 업로드
+    Generate TTS from research ID (RECOMMENDED)
+
+    Provide the research ID to fetch the associated PDF file from S3 bucket.
+    The research must have an object_key field populated with the S3 path.
     """
     try:
-        service = TTSService()
-        result = await service.process_pdf_from_s3_to_tts(request.filename)
+        service = TTSService(db)
+        result = await service.create_tts_from_research_id(request.research_id)
 
         return JSONResponse(
             {
-                "message": "✅ S3 PDF 처리 및 TTS 생성 완료",
-                "pdf_filename": request.filename,
+                "message": "✅ TTS 생성 완료",
+                "research_id": request.research_id,
                 "summary": result["summary"],
                 "explainer": result.get("explainer", ""),
                 "tts_id": result["tts_id"],
                 "audio_filename": result["audio_filename"],
                 "s3_url": result.get("s3_url"),
                 "presigned_url": result.get("presigned_url"),
-                "download_url": f"/tts/{result['audio_filename']}/download",
-                "stream_url": f"/tts/{result['audio_filename']}/stream",
             }
         )
-
     except FileNotFoundError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"S3 PDF to TTS processing failed: {str(e)}",
+            detail=f"Internal server error: {str(e)}",
         )
 
 
 # =====================================================
-# 2️⃣ PDF 파일 경로 입력 방식 (LEGACY - for backward compatibility)
+# 4️⃣ 음성 파일 다운로드
 # =====================================================
-@router.post("/from-pdf-path")
-async def create_tts_from_pdf_path(request: TTSPdfPathRequest):
-    """
-    PDF 경로 입력 → Multi-Agent 요약 → TTS 음성 생성 → 결과 반환
-    (Legacy endpoint for backward compatibility - use /from-s3 for new implementations)
-    """
-    try:
-        service = TTSService()
-
-        if not os.path.exists(request.pdf_path):
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"PDF 파일을 찾을 수 없습니다: {request.pdf_path}",
-            )
-
-        result = await service.process_pdf_to_tts(request.pdf_path)
-
-        return JSONResponse(
-            {
-                "message": "✅ PDF 처리 및 TTS 생성 완료",
-                "pdf_path": request.pdf_path,
-                "summary": result["summary"],
-                "explainer": result.get("explainer", ""),
-                "tts_id": result["tts_id"],
-                "audio_file": result["audio_filename"],
-                "download_url": f"/tts/{result['audio_filename']}/download",
-                "stream_url": f"/tts/{result['audio_filename']}/stream",
-            }
-        )
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"PDF to TTS processing failed: {str(e)}",
-        )
-
-
-# =====================================================
-# 3️⃣ 음성 파일 다운로드
-# =====================================================
-@router.get("/{filename}/download")
+@router.get("/stream/{filename}")
 def download_tts(filename: str):
     """
     🎧 생성된 음성 파일 다운로드
     """
-    service = TTSService()
+    try:
+        # Initialize S3 client
+        s3_client = boto3.client(
+            "s3",
+            aws_access_key_id=settings.AWS_ACCESS_KEY,
+            aws_secret_access_key=settings.AWS_SECRET_KEY,
+        )
 
-    # S3에서 확인
-    presigned_url = service._get_audio_url_from_s3(filename)
-    if presigned_url:
-        return RedirectResponse(url=presigned_url)
+        # Construct S3 key for TTS files
+        s3_key = f"output/tts/{filename}"
 
-    # 둘 다 없으면 404
-    raise HTTPException(status_code=404, detail="음성 파일이 존재하지 않습니다.")
+        # Get object from S3
+        s3_obj = s3_client.get_object(Bucket=settings.S3_BUCKET, Key=s3_key)
+        content = s3_obj["Body"].read()
+        content_type = (
+            s3_obj.get("ContentType")
+            or mimetypes.guess_type(filename)[0]
+            or "application/octet-stream"
+        )
 
+        return Response(
+            content=content,
+            media_type=content_type,
+            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        )
 
-# =====================================================
-# 4️⃣ 음성 파일 즉시 재생
-# =====================================================
-@router.get("/{filename}/stream")
-def stream_tts(filename: str):
-    """
-    🎵 음성 파일 브라우저 즉시 재생용
-    """
-    service = TTSService()
-
-    # S3에서 확인
-    presigned_url = service._get_audio_url_from_s3(filename)
-    if presigned_url:
-        return RedirectResponse(url=presigned_url)
-
-    # 둘 다 없으면 404
-    raise HTTPException(status_code=404, detail="음성 파일이 존재하지 않습니다.")
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "NoSuchKey":
+            raise HTTPException(
+                status_code=404, detail="음성 파일이 존재하지 않습니다."
+            )
+        raise HTTPException(status_code=500, detail=f"S3 error: {e}")
