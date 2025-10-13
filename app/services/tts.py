@@ -174,7 +174,50 @@ class TTSService:
             os.environ["AOAI_DEPLOY_GPT4O"] = settings.AOAI_DEPLOY_GPT4O
             os.environ["AOAI_DEPLOY_EMBED_3_LARGE"] = settings.AOAI_DEPLOY_EMBED_3_LARGE
 
-            legacy_path = Path(__file__).parent.parent.parent / "legacy"
+            # More robust path resolution for different deployment environments
+            current_file = Path(__file__).resolve()
+            project_root = current_file.parent.parent.parent
+            legacy_path = project_root / "legacy"
+
+            # Debug logging
+            logger.info(f"🔍 Debug - Current file: {current_file}")
+            logger.info(f"🔍 Debug - Project root: {project_root}")
+            logger.info(f"🔍 Debug - Initial legacy path: {legacy_path}")
+            logger.info(f"🔍 Debug - Current working directory: {Path.cwd()}")
+
+            # Verify the legacy directory exists
+            if not legacy_path.exists():
+                # Try alternative paths
+                alternative_paths = [
+                    Path.cwd() / "legacy",
+                    Path.cwd() / ".." / "legacy",
+                    Path("/app/legacy"),  # Docker container path
+                ]
+
+                logger.info(f"🔍 Debug - Trying alternative paths: {alternative_paths}")
+
+                for alt_path in alternative_paths:
+                    if alt_path.exists():
+                        legacy_path = alt_path
+                        logger.info(f"✅ Found legacy directory at: {legacy_path}")
+                        break
+                else:
+                    # List all directories in current working directory for debugging
+                    try:
+                        cwd_contents = list(Path.cwd().iterdir())
+                        logger.error(
+                            f"❌ Current working directory contents: {cwd_contents}"
+                        )
+                    except Exception as list_error:
+                        logger.error(
+                            f"❌ Could not list working directory: {list_error}"
+                        )
+
+                    raise FileNotFoundError(
+                        f"Legacy directory not found. Tried: {legacy_path} and alternatives: {alternative_paths}"
+                    )
+
+            logger.info(f"📁 Using legacy path: {legacy_path}")
             sys.path.insert(0, str(legacy_path))
 
             from multitest import run_multi_agent  # type: ignore
