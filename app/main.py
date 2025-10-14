@@ -1,11 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.routes.chatbot import router as chatbot_router
 from app.routes.quiz import router as quiz_router
 from app.routes.research import router as research_router
 from app.routes.summary import router as summary_router
 from app.routes.tts import router as tts_router
+from app.routes.video import router as video_router
 
 app = FastAPI()
 
@@ -29,3 +31,11 @@ app.include_router(quiz_router)
 app.include_router(tts_router)
 app.include_router(summary_router)
 app.include_router(chatbot_router)
+app.include_router(video_router)
+
+# Mount static files for serving generated videos
+app.mount(
+    "/output",
+    StaticFiles(directory="/Users/chihosong/sk/tech11-be/output"),
+    name="output",
+)
