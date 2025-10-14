@@ -1,6 +1,6 @@
 from datetime import datetime
-from typing import Optional
 from enum import Enum
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -26,12 +26,15 @@ class TTSCreate(TTSBase):
 
 class TTSUpdate(BaseModel):
     text: Optional[str] = Field(None, description="Updated text to convert to speech")
-    language: Optional[TTSLanguage] = Field(None, description="Updated language for TTS")
+    language: Optional[TTSLanguage] = Field(
+        None, description="Updated language for TTS"
+    )
     filename: Optional[str] = Field(None, description="Updated custom filename")
 
 
 class TTSResponse(BaseModel):
     path: str = Field(..., description="Path to the output mp3 file")
+
 
 class TTSRequest(BaseModel):
     path: str = Field(..., description="Path to the pdf file")
@@ -47,14 +50,20 @@ class TTSFileResponse(BaseModel):
 
 
 class TTSExplainerRequest(BaseModel):
-    explainer_text: str = Field(..., description="Explainer text to convert to speech (from multi-agent workflow)")
+    explainer_text: str = Field(
+        ...,
+        description="Explainer text to convert to speech (from multi-agent workflow)",
+    )
     # language 필드 제거: 한국어 고정이므로 불필요
 
 
 class TTSPdfPathRequest(BaseModel):
-    pdf_path: str = Field(..., description="Path to the PDF file to process for TTS generation")
+    pdf_path: str = Field(
+        ..., description="Path to the PDF file to process for TTS generation"
+    )
 
 
 class TTSResearchRequest(BaseModel):
     """Research ID 기반 TTS 생성 요청"""
+
     research_id: int = Field(..., description="Research ID to generate TTS from", gt=0)
