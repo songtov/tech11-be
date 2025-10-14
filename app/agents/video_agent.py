@@ -3,21 +3,23 @@ Video Agent - Assembles final video from slides and audio using MoviePy
 """
 
 import logging
-from typing import Dict, List, Optional
 from pathlib import Path
+from typing import Dict, List, Optional
 
 try:
     from moviepy.editor import (
         AudioFileClip,
-        concatenate_videoclips,
         ImageClip,
+        concatenate_videoclips,
     )
 except ImportError:
     # Fallback for moviepy 2.x
     from moviepy import AudioFileClip, concatenate_videoclips, ImageClip
-from pptx import Presentation
-import tempfile
+
 import os
+import tempfile
+
+from pptx import Presentation
 
 logger = logging.getLogger(__name__)
 

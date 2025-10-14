@@ -3,8 +3,8 @@ Voice Agent - Converts narration scripts to audio using Text-to-Speech
 """
 
 import logging
-from typing import Dict, List
 from pathlib import Path
+from typing import Dict, List
 
 from gtts import gTTS
 
@@ -26,7 +26,7 @@ class VoiceAgent:
 
             # Check if text is empty after cleaning
             if not cleaned_text or cleaned_text.strip() == "":
-                logger.warning(f"Empty text for TTS, using default text")
+                logger.warning("Empty text for TTS, using default text")
                 cleaned_text = (
                     "이 슬라이드는 연구 논문의 중요한 정보를 포함하고 있습니다."
                 )

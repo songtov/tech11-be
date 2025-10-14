@@ -3,20 +3,20 @@ Video Service - Main orchestration service for video generation pipeline
 """
 
 import logging
-import os
-from typing import Dict, Optional
 from pathlib import Path
+from typing import Dict
+
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.agents.reader_agent import ReaderAgent
-from app.agents.slide_agent import SlideAgent
 from app.agents.script_agent import ScriptAgent
-from app.agents.voice_agent import VoiceAgent
+from app.agents.slide_agent import SlideAgent
 from app.agents.video_agent import VideoAgent
+from app.agents.voice_agent import VoiceAgent
+from app.core.config import settings
 from app.repositories.research_repository import ResearchRepository
 from app.schemas.video import CreateVideoRequest, CreateVideoResponse
-from app.core.config import settings
-from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
 

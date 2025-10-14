@@ -195,6 +195,7 @@ class ReaderAgent:
 
         # Download PDF to temporary file
         import tempfile
+
         import requests
 
         try:

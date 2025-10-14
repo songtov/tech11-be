@@ -3,15 +3,15 @@ Slide Agent - Creates PowerPoint presentations from research paper content
 """
 
 import logging
-from typing import Dict, List
 from pathlib import Path
+from typing import Dict, List
 
-from pptx import Presentation
-from pptx.util import Inches, Pt
-from pptx.enum.text import PP_ALIGN
-from pptx.dml.color import RGBColor
 from langchain.schema import HumanMessage, SystemMessage
 from langchain_openai import AzureChatOpenAI
+from pptx import Presentation
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
+from pptx.util import Inches, Pt
 
 logger = logging.getLogger(__name__)
 

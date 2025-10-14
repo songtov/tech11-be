@@ -1,5 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -19,13 +18,15 @@ def get_video_by_research_id(research_id: int, db: Session = Depends(get_db)):
     service = VideoService(db)
     return service.get_video_by_research_id(research_id)
 
+
 @router.post(
     "/video",
     status_code=status.HTTP_201_CREATED,
     response_model=CreateVideoResponse,
 )
-def create_video_from_research_id(video_request: CreateVideoRequest, db: Session = Depends(get_db)):
+def create_video_from_research_id(
+    video_request: CreateVideoRequest, db: Session = Depends(get_db)
+):
     """Create a video from a research paper"""
     service = VideoService(db)
     return service.create_video_from_research_id(video_request)
-
