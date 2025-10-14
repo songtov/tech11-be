@@ -63,13 +63,7 @@ class TTSPdfPathRequest(BaseModel):
     )
 
 
-class TTSFilenameRequest(BaseModel):
-    filename: str = Field(
-        ..., description="Filename of the PDF in S3 bucket (e.g., 'myfile.pdf')"
-    )
-
-
 class TTSResearchRequest(BaseModel):
-    research_id: int = Field(
-        ..., description="ID of the research entry to generate TTS from", gt=0
-    )
+    """Research ID 기반 TTS 생성 요청"""
+
+    research_id: int = Field(..., description="Research ID to generate TTS from", gt=0)

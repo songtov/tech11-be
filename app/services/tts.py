@@ -6,11 +6,18 @@ import re
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, TypedDict
 
 import boto3
 from botocore.exceptions import ClientError
 from gtts import gTTS
+from langchain_community.document_loaders import PyMuPDFLoader
+from langchain_community.vectorstores import FAISS
+from langchain_core.documents import Document
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import PromptTemplate
+from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -22,8 +29,16 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ===========================================================
-# ✅ S3 기반 TTS 서비스
+# ✅ S3 기반 TTS 서비스 (Legacy 독립형)
 # ===========================================================
+
+
+# Agent State Type
+class AgentState(TypedDict, total=False):
+    vectorstore: Any
+    k: int
+    summary: str
+    explainer: str
 
 
 def clean_text(text: str) -> str:
@@ -157,82 +172,179 @@ class TTSService:
             return None
 
     # =====================================================
-    # 1️⃣ 멀티에이전트 실행 (임시 더미 구현 or 실제 호출)
+    # 1️⃣ LLM/Embeddings 팩토리 (Legacy 통합)
+    # =====================================================
+    def _build_llm(self, use_mini: bool = True, temperature: float = 0.2):
+        """Azure OpenAI LLM 생성"""
+        return AzureChatOpenAI(
+            openai_api_version="2024-02-01",
+            azure_deployment=(
+                settings.AOAI_DEPLOY_GPT4O_MINI
+                if use_mini
+                else settings.AOAI_DEPLOY_GPT4O
+            ),
+            api_key=settings.AOAI_API_KEY,
+            azure_endpoint=settings.AOAI_ENDPOINT,
+            temperature=temperature,
+        )
+
+    def _build_embeddings(self):
+        """Azure OpenAI Embeddings 생성"""
+        return AzureOpenAIEmbeddings(
+            model=settings.AOAI_DEPLOY_EMBED_3_LARGE,
+            openai_api_version="2024-02-01",
+            api_key=settings.AOAI_API_KEY,
+            azure_endpoint=settings.AOAI_ENDPOINT,
+        )
+
+    # =====================================================
+    # 2️⃣ PDF 처리 (Legacy 통합)
+    # =====================================================
+    def _load_pdf(self, path: str) -> List[Document]:
+        """PDF 로딩"""
+        loader = PyMuPDFLoader(path)
+        return loader.load()
+
+    def _build_vectorstore(
+        self, docs: List[Document], chunk_size: int = 1000, chunk_overlap: int = 200
+    ):
+        """FAISS 벡터스토어 구축"""
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=chunk_size, chunk_overlap=chunk_overlap
+        )
+        splits = splitter.split_documents(docs)
+
+        # 메타데이터 추가
+        for d in splits:
+            page = d.metadata.get("page", None)
+            src = d.metadata.get("source", "")
+            prefix = f"[source: {os.path.basename(src)} | page: {page}] "
+            d.page_content = prefix + d.page_content
+
+        embeddings = self._build_embeddings()
+        vs = FAISS.from_documents(splits, embeddings)
+        return vs
+
+    # =====================================================
+    # 3️⃣ 프롬프트 체인들 (Legacy 통합)
+    # =====================================================
+    def _make_summary_chain(self):
+        """요약 생성 체인"""
+        prompt = PromptTemplate.from_template(
+            """당신은 논문을 한국어로 요약하는 전문가입니다.
+아래 문서를 읽고 다음 항목을 포함해 간결하고 구조화된 요약을 작성하세요.
+
+1) 한 줄 요약
+2) 연구 배경과 문제 정의
+3) 핵심 기술과 방법론
+4) 주요 결과와 성능
+5) 기술적 시사점과 한계
+6) 핵심 키워드
+
+문서 내용:
+{document_content}
+"""
+        )
+        return prompt | self._build_llm(use_mini=True) | StrOutputParser()
+
+    def _make_explainer_chain(self):
+        """해설 생성 체인"""
+        prompt = PromptTemplate.from_template(
+            """당신은 전문 해설가입니다. 아래 문서를 바탕으로 한국어 해설 스크립트를 작성하세요.
+
+구성:
+1) 논문의 상세 설명
+2) 일반인도 이해할 수 있는 쉬운 설명
+3) 산업 현장에서의 적용 시나리오 2~3가지
+
+문서 내용:
+{document_content}
+"""
+        )
+        return prompt | self._build_llm(use_mini=False) | StrOutputParser()
+
+    # =====================================================
+    # 4️⃣ LangGraph 노드들 (Legacy 통합)
+    # =====================================================
+    def _node_summarizer(self, state: AgentState) -> AgentState:
+        """요약 생성 노드"""
+        vs = state["vectorstore"]
+        k = state.get("k", 12)
+        chunks = vs.similarity_search("summary overview of this document", k=k)
+        content = "\n\n".join([c.page_content for c in chunks])
+
+        logger.info("📝 요약 생성 중...")
+        summary_chain = self._make_summary_chain()
+        summary = summary_chain.invoke({"document_content": content})
+        return {"summary": summary}
+
+    def _node_explainer(self, state: AgentState) -> AgentState:
+        """해설 생성 노드"""
+        vs = state["vectorstore"]
+        k = state.get("k", 15)
+        chunks = vs.similarity_search(
+            "detailed explanation with industry applications", k=k
+        )
+        content = "\n\n".join([c.page_content for c in chunks])
+
+        logger.info("📖 해설 생성 중...")
+        explainer_chain = self._make_explainer_chain()
+        explainer = explainer_chain.invoke({"document_content": content})
+        return {"explainer": explainer}
+
+    # =====================================================
+    # 5️⃣ 멀티에이전트 실행 (Legacy 독립형)
     # =====================================================
     async def _run_legacy_multi_agent(self, pdf_path: str) -> Dict[str, Any]:
         """
-        Legacy multitest.py의 run_multi_agent 함수를 직접 호출
-        PDF → 벡터스토어 → summary/quiz/explainer 생성
+        Legacy 독립형 멀티에이전트 실행
+        PDF → 벡터스토어 → summary/explainer 생성 (Legacy 폴더 불필요)
         """
         try:
-            import sys
+            logger.info(f"🎯 PDF 처리 시작: {pdf_path}")
 
-            # Set environment variables for legacy code to access
-            os.environ["AOAI_ENDPOINT"] = settings.AOAI_ENDPOINT
-            os.environ["AOAI_API_KEY"] = settings.AOAI_API_KEY
-            os.environ["AOAI_DEPLOY_GPT4O_MINI"] = settings.AOAI_DEPLOY_GPT4O_MINI
-            os.environ["AOAI_DEPLOY_GPT4O"] = settings.AOAI_DEPLOY_GPT4O
-            os.environ["AOAI_DEPLOY_EMBED_3_LARGE"] = settings.AOAI_DEPLOY_EMBED_3_LARGE
+            # 1. PDF 로드
+            docs = self._load_pdf(pdf_path)
+            logger.info(f"✅ PDF 로드 완료: {len(docs)}개 문서")
 
-            # More robust path resolution for different deployment environments
-            current_file = Path(__file__).resolve()
-            project_root = current_file.parent.parent.parent
-            legacy_path = project_root / "legacy"
+            # 2. 벡터스토어 구축
+            vs = self._build_vectorstore(docs)
+            logger.info("✅ 벡터스토어 구축 완료")
 
-            # Debug logging
-            logger.info(f"🔍 Debug - Current file: {current_file}")
-            logger.info(f"🔍 Debug - Project root: {project_root}")
-            logger.info(f"🔍 Debug - Initial legacy path: {legacy_path}")
-            logger.info(f"🔍 Debug - Current working directory: {Path.cwd()}")
+            # 3. 상태 초기화
+            state: AgentState = {"vectorstore": vs, "k": 12}
 
-            # Verify the legacy directory exists
-            if not legacy_path.exists():
-                # Try alternative paths
-                alternative_paths = [
-                    Path.cwd() / "legacy",
-                    Path.cwd() / ".." / "legacy",
-                    Path("/app/legacy"),  # Docker container path
-                ]
+            # 4. 요약 생성
+            summary_result = self._node_summarizer(state)
+            state.update(summary_result)
 
-                logger.info(f"🔍 Debug - Trying alternative paths: {alternative_paths}")
+            # 5. 해설 생성
+            explainer_result = self._node_explainer(state)
+            state.update(explainer_result)
 
-                for alt_path in alternative_paths:
-                    if alt_path.exists():
-                        legacy_path = alt_path
-                        logger.info(f"✅ Found legacy directory at: {legacy_path}")
-                        break
-                else:
-                    # List all directories in current working directory for debugging
-                    try:
-                        cwd_contents = list(Path.cwd().iterdir())
-                        logger.error(
-                            f"❌ Current working directory contents: {cwd_contents}"
-                        )
-                    except Exception as list_error:
-                        logger.error(
-                            f"❌ Could not list working directory: {list_error}"
-                        )
+            logger.info("✅ 멀티에이전트 처리 완료")
 
-                    raise FileNotFoundError(
-                        f"Legacy directory not found. Tried: {legacy_path} and alternatives: {alternative_paths}"
-                    )
+            # 6. 결과 파일 저장 (output/tts)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            if state.get("summary"):
+                summary_path = self.output_dir / f"summary_{ts}.txt"
+                with open(summary_path, "w", encoding="utf-8") as f:
+                    f.write(state["summary"])
+                logger.info(f"📝 요약 저장: {summary_path}")
 
-            logger.info(f"📁 Using legacy path: {legacy_path}")
-            sys.path.insert(0, str(legacy_path))
-
-            from multitest import run_multi_agent  # type: ignore
-
-            logger.info(f"🎯 Legacy 멀티에이전트 실행 시작: {pdf_path}")
-            final_state = run_multi_agent(pdf_path)
-            logger.info("✅ Legacy 멀티에이전트 실행 완료")
+            if state.get("explainer"):
+                explainer_path = self.output_dir / f"explainer_{ts}.txt"
+                with open(explainer_path, "w", encoding="utf-8") as f:
+                    f.write(state["explainer"])
+                logger.info(f"📝 해설 저장: {explainer_path}")
 
             return {
-                "summary": final_state.get("summary", ""),
-                "explainer": final_state.get("explainer", ""),
-                "quiz": final_state.get("quiz", ""),
+                "summary": state.get("summary", ""),
+                "explainer": state.get("explainer", ""),
+                "quiz": "",  # TTS에서는 사용하지 않음
             }
         except Exception as e:
-            logger.error(f"❌ Legacy 멀티에이전트 실행 실패: {e}")
+            logger.error(f"❌ 멀티에이전트 실행 실패: {e}")
             raise e
 
     # =====================================================
