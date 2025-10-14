@@ -128,7 +128,7 @@ class VideoService:
 
             # Step 6: Assemble final video
             logger.info("Step 5: Assembling final video...")
-            video_path = self.video_agent.process_slides_and_audio_to_video(
+            self.video_agent.process_slides_and_audio_to_video(
                 slides_path,
                 audio_data,
                 str(self.output_base_dir / str(research_id)),

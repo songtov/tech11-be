@@ -99,7 +99,7 @@ class VideoAgent:
             try:
                 title_font = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 72)
                 bullet_font = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 48)
-            except:
+            except (OSError, IOError):
                 title_font = ImageFont.load_default()
                 bullet_font = ImageFont.load_default()
 
