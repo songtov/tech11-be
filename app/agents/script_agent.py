@@ -30,18 +30,19 @@ class ScriptAgent:
     ) -> List[Dict]:
         """Generate narration script for each slide"""
         system_prompt = """You are an expert educational narrator and presenter.
-        Create engaging, conversational narration scripts for exactly 3 slides.
+        Create engaging, conversational narration scripts for exactly 3 slides in Korean language.
 
         Requirements:
         - Each script should be 20-40 seconds when spoken (approximately 60-120 words)
-        - Use conversational, educational tone
+        - Use conversational, educational tone in Korean
         - Include smooth transitions between slides
-        - Make complex concepts accessible
-        - Use "we" and "you" to engage the audience
+        - Make complex concepts accessible in Korean
+        - Use "우리" and "여러분" to engage the audience
         - Include brief pauses indicated by [pause]
         - Ensure each script has substantial content (no empty scripts)
+        - Write in natural, fluent Korean
 
-        Return a JSON list with exactly 3 slides' narration scripts."""
+        Return a JSON list with exactly 3 slides' narration scripts in Korean."""
 
         # Prepare context about the paper
         paper_context = f"""

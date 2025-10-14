@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class VoiceAgent:
     """Agent responsible for converting text to speech"""
 
-    def __init__(self, language: str = "en", slow: bool = False):
+    def __init__(self, language: str = "ko", slow: bool = False):
         self.language = language
         self.slow = slow
 
@@ -28,7 +28,7 @@ class VoiceAgent:
             if not cleaned_text or cleaned_text.strip() == "":
                 logger.warning(f"Empty text for TTS, using default text")
                 cleaned_text = (
-                    "This slide contains important information from the research paper."
+                    "이 슬라이드는 연구 논문의 중요한 정보를 포함하고 있습니다."
                 )
 
             # Create TTS object

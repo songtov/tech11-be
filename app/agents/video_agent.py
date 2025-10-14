@@ -63,18 +63,22 @@ class VideoAgent:
         content = {"title": "", "bullet_points": []}
 
         try:
-            # Extract title (usually the first text shape)
+            # Extract all text from slide shapes
             for shape in slide.shapes:
                 if hasattr(shape, "text") and shape.text:
+                    text = shape.text.strip()
                     if not content["title"]:  # First text is usually title
-                        content["title"] = shape.text.strip()
+                        content["title"] = text
                     else:
-                        # Extract bullet points
-                        lines = shape.text.strip().split("\n")
+                        # Extract bullet points from content shape
+                        lines = text.split("\n")
                         for line in lines:
-                            if line.strip():
-                                content["bullet_points"].append(line.strip())
-                    break
+                            line = line.strip()
+                            if line and not line.startswith(
+                                "•"
+                            ):  # Skip empty lines and bullet markers
+                                content["bullet_points"].append(line)
+                        break  # Found content, stop looking
         except Exception as e:
             logger.warning(f"Error extracting slide content: {e}")
 
