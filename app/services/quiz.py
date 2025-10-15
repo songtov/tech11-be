@@ -16,6 +16,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.repositories.quiz_repository import QuizRepository
 from app.repositories.research_repository import ResearchRepository
 from app.schemas.quiz import QuestionResponse, QuizCreate, QuizResponse
 
@@ -28,6 +29,7 @@ class QuizService:
     def __init__(self, db: Session):
         self.db = db
         self.research_repository = ResearchRepository(db)
+        self.quiz_repository = QuizRepository(db)
         self.llm_mini = self._get_llm(temperature=0.2, use_mini=True)
         self.embeddings = self._get_embeddings()
 
@@ -314,30 +316,71 @@ O/X 퀴즈를 작성해 주세요.
                 logger.info(f"🗑️ 임시 PDF 파일 삭제: {temp_pdf_path}")
 
     def create_quiz_from_research_id(self, research_id: int) -> QuizResponse:
-        """Create quiz from research ID by fetching research from database"""
+        """Create quiz from research ID by fetching research from database with caching"""
         try:
-            # 1. Fetch research from database
+            # 1. Check for cached quiz first
+            logger.info(f"🔍 Checking for cached quiz for research ID: {research_id}")
+            cached_quiz = self.quiz_repository.get_by_research_id(research_id)
+
+            if cached_quiz:
+                logger.info(f"✅ Found cached quiz for research ID: {research_id}")
+                # Parse cached questions_set JSON back to QuestionResponse objects
+                questions_data = cached_quiz.questions_set
+                questions = [
+                    QuestionResponse(
+                        question=item["question"],
+                        answer=item["answer"],
+                        explanation=item["explanation"],
+                    )
+                    for item in questions_data
+                ]
+                return QuizResponse(data=questions)
+
+            # 2. No cached quiz found, proceed with generation
+            logger.info(
+                f"❌ No cached quiz found for research ID: {research_id}, generating new quiz"
+            )
+
+            # 3. Fetch research from database
             logger.info(f"🔍 Fetching research with ID: {research_id}")
             research = self.research_repository.get_by_id(research_id)
 
             if not research:
                 raise ValueError(f"Research with ID {research_id} not found")
 
-            # 2. Validate research has object_key (S3 filename)
+            # 4. Validate research has object_key (S3 filename)
             if not research.object_key:
                 raise ValueError(
                     f"Research with ID {research_id} does not have an associated PDF file (missing object_key)"
                 )
 
-            # 3. Extract filename from object_key
+            # 5. Extract filename from object_key
             # object_key format: "output/research/filename.pdf"
             object_key = research.object_key
             filename = object_key.split("/")[-1] if "/" in object_key else object_key
 
             logger.info(f"📄 Using filename from research object_key: {filename}")
 
-            # 4. Generate quiz using existing S3 method
-            return self.create_quiz_from_s3(filename)
+            # 6. Generate quiz using existing S3 method
+            quiz_response = self.create_quiz_from_s3(filename)
+
+            # 7. Cache the generated quiz in database
+            logger.info(f"💾 Caching quiz for research ID: {research_id}")
+            questions_data = [
+                {
+                    "question": q.question,
+                    "answer": q.answer,
+                    "explanation": q.explanation,
+                }
+                for q in quiz_response.data
+            ]
+
+            quiz_data = {"research_id": research_id, "questions_set": questions_data}
+
+            self.quiz_repository.create(quiz_data)
+            logger.info(f"✅ Quiz cached successfully for research ID: {research_id}")
+
+            return quiz_response
 
         except ValueError as e:
             logger.error(f"❌ Research validation failed: {e}")
