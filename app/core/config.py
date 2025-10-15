@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     TTS_ENDPOINT: str = "https://api.typecast.ai/v1/text-to-speech"
     TTS_API_KEY: str = ""
     TTS_VOICE_ID: str = ""
+    TTS_MODEL: str = "ssfm-v21"
+    TTS_LANGUAGE: str = "kor"
+    TTS_EMOTION_PRESET: str = "normal"
+    TTS_EMOTION_INTENSITY: int = 1
+    TTS_VOLUME: int = 100
+    TTS_AUDIO_PITCH: int = 0
+    TTS_AUDIO_TEMPO: int = 1
 
     # S3 Bucket
     S3_BUCKET: str = ""

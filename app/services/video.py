@@ -76,7 +76,18 @@ class VideoService:
                 api_key=settings.AOAI_API_KEY,
                 deployment_name=settings.AOAI_DEPLOY_GPT4O_MINI,
             )
-            self.voice_agent = VoiceAgent()
+            self.voice_agent = VoiceAgent(
+                endpoint=settings.TTS_ENDPOINT,
+                api_key=settings.TTS_API_KEY,
+                voice_id=settings.TTS_VOICE_ID,
+                model=settings.TTS_MODEL,
+                language=settings.TTS_LANGUAGE,
+                emotion_preset=settings.TTS_EMOTION_PRESET,
+                emotion_intensity=settings.TTS_EMOTION_INTENSITY,
+                volume=settings.TTS_VOLUME,
+                audio_pitch=settings.TTS_AUDIO_PITCH,
+                audio_tempo=settings.TTS_AUDIO_TEMPO,
+            )
             self.video_agent = VideoAgent()
             self.figure_agent = FigureAgent(
                 azure_endpoint=settings.AOAI_ENDPOINT,
