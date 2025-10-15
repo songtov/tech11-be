@@ -51,51 +51,146 @@ class ReaderAgent:
             raise
 
     def extract_figures_and_tables(self, pdf_path: str) -> List[Dict]:
-        """Extract figures and tables metadata from PDF"""
+        """Extract figures, tables, and images from PDF with enhanced metadata"""
         try:
             doc = fitz.open(pdf_path)
-            figures = []
+            visual_elements = []
 
             for page_num in range(doc.page_count):
                 page = doc[page_num]
-                # Extract images/figures
+
+                # Extract images/figures with enhanced metadata
                 image_list = page.get_images()
                 for img_index, img in enumerate(image_list):
-                    figures.append(
+                    # Get image metadata
+                    xref = img[0]
+                    pix = fitz.Pixmap(doc, xref)
+
+                    # Extract image data
+                    img_data = pix.tobytes("png")
+                    img_size = (pix.width, pix.height)
+
+                    # Determine if it's likely a figure, chart, or diagram
+                    element_type = self._classify_visual_element(img_size, page_num)
+
+                    visual_elements.append(
                         {
                             "page": page_num + 1,
-                            "type": "figure",
+                            "type": element_type,
                             "index": img_index,
-                            "description": f"Figure {img_index + 1} on page {page_num + 1}",
+                            "description": f"{element_type.title()} {img_index + 1} on page {page_num + 1}",
+                            "size": img_size,
+                            "data": img_data,
+                            "xref": xref,
+                            "is_large": img_size[0] > 200
+                            and img_size[1] > 200,  # Likely important figure
+                            "aspect_ratio": (
+                                img_size[0] / img_size[1] if img_size[1] > 0 else 1
+                            ),
                         }
                     )
 
+                    pix = None  # Free memory
+
+                # Extract tables using text analysis
+                tables = self._extract_tables_from_page(page, page_num)
+                visual_elements.extend(tables)
+
             doc.close()
-            logger.info(f"Extracted {len(figures)} figures from PDF: {pdf_path}")
-            return figures
+            logger.info(
+                f"Extracted {len(visual_elements)} visual elements from PDF: {pdf_path}"
+            )
+            return visual_elements
 
         except Exception as e:
-            logger.error(f"Error extracting figures from PDF {pdf_path}: {e}")
+            logger.error(f"Error extracting visual elements from PDF {pdf_path}: {e}")
             return []
 
-    def summarize_paper_structure(self, text: str) -> Dict:
-        """Analyze and summarize the paper structure"""
-        system_prompt = """You are an expert academic paper analyzer.
-        Analyze the provided research paper text and extract:
-        1. Title
-        2. Abstract
-        3. Key sections (Introduction, Methods, Results, Discussion, Conclusion)
-        4. Main findings/key points
-        5. Methodology
-        6. Key figures/tables mentioned
+    def _classify_visual_element(self, size: tuple, page_num: int) -> str:
+        """Classify visual element based on size and context"""
+        width, height = size
 
-        Return a structured summary in JSON format."""
+        # Large images are likely figures or charts
+        if width > 300 and height > 200:
+            return "figure"
+        # Medium images might be diagrams
+        elif width > 150 and height > 100:
+            return "diagram"
+        # Small images are likely icons or small charts
+        else:
+            return "chart"
+
+    def _extract_tables_from_page(self, page, page_num: int) -> List[Dict]:
+        """Extract table information from page text"""
+        tables = []
+        text = page.get_text()
+
+        # Look for table-like structures in text
+        lines = text.split("\n")
+        table_candidates = []
+        current_table = []
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                if current_table and len(current_table) >= 2:
+                    table_candidates.append(current_table)
+                current_table = []
+            else:
+                # Check if line looks like table data (multiple columns)
+                if "\t" in line or len(line.split()) > 3:
+                    current_table.append(line)
+
+        # Process table candidates
+        for i, table_data in enumerate(table_candidates):
+            if len(table_data) >= 2:  # At least 2 rows
+                tables.append(
+                    {
+                        "page": page_num + 1,
+                        "type": "table",
+                        "index": i,
+                        "description": f"Table {i + 1} on page {page_num + 1}",
+                        "data": table_data,
+                        "rows": len(table_data),
+                        "is_large": len(table_data) > 3,
+                    }
+                )
+
+        return tables
+
+    def summarize_paper_structure(self, text: str) -> Dict:
+        """Analyze and summarize the paper structure with enhanced content extraction"""
+        system_prompt = """You are an expert academic paper analyzer and presentation designer.
+        Analyze the provided research paper text and extract comprehensive information for creating professional presentation slides:
+
+        1. Title and main topic
+        2. Abstract with key points (3-5 bullet points)
+        3. Introduction with background and objectives
+        4. Methodology/Approach with specific details
+        5. Key Results/Findings with specific data and statistics
+        6. Discussion/Implications with practical applications
+        7. Conclusion with main takeaways
+        8. Key figures/tables mentioned and their significance
+        9. Important statistics, percentages, or numerical data
+        10. Technical terms and their explanations
+        11. Research questions and hypotheses
+        12. Limitations and future work
+
+        Focus on extracting:
+        - Specific numbers, percentages, and statistics
+        - Technical terms with explanations
+        - Key findings that can be visualized
+        - Important quotes or statements
+        - Methodology details
+        - Practical implications
+
+        Return a comprehensive structured summary in JSON format that can be used to create information-rich presentation slides."""
 
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(
-                content=f"Please analyze this research paper:\n\n{text[:8000]}"
-            ),  # Limit text for API
+                content=f"Please analyze this research paper for presentation creation:\n\n{text[:10000]}"
+            ),  # Increased text limit for better analysis
         ]
 
         try:
@@ -105,6 +200,7 @@ class ReaderAgent:
                 "analysis": response.content,
                 "text_length": len(text),
                 "chunks": len(self.text_splitter.split_text(text)),
+                "enhanced_extraction": True,
             }
         except Exception as e:
             logger.error(f"Error analyzing paper structure: {e}")
@@ -112,54 +208,198 @@ class ReaderAgent:
                 "analysis": "Error in analysis",
                 "text_length": len(text),
                 "chunks": len(self.text_splitter.split_text(text)),
+                "enhanced_extraction": False,
             }
 
     def extract_key_sections(self, text: str) -> Dict[str, str]:
-        """Extract key sections for slide generation"""
+        """Extract key sections for slide generation with enhanced detail"""
         sections = {
             "abstract": "",
             "introduction": "",
             "methods": "",
             "results": "",
             "conclusion": "",
+            "statistics": "",
+            "key_findings": "",
+            "methodology": "",
+            "implications": "",
         }
 
-        # Simple text extraction based on common section headers
+        # Enhanced text extraction with better section detection
         lines = text.split("\n")
         current_section = None
+        section_content = []
 
         for line in lines:
             line_lower = line.lower().strip()
+            line_original = line.strip()
 
-            if any(keyword in line_lower for keyword in ["abstract", "summary"]):
+            # More comprehensive section detection
+            if any(
+                keyword in line_lower for keyword in ["abstract", "summary", "overview"]
+            ):
+                if current_section and section_content:
+                    sections[current_section] = "\n".join(section_content)
                 current_section = "abstract"
+                section_content = []
             elif any(
-                keyword in line_lower for keyword in ["introduction", "background"]
+                keyword in line_lower
+                for keyword in [
+                    "introduction",
+                    "background",
+                    "motivation",
+                    "problem statement",
+                ]
             ):
+                if current_section and section_content:
+                    sections[current_section] = "\n".join(section_content)
                 current_section = "introduction"
+                section_content = []
             elif any(
                 keyword in line_lower
-                for keyword in ["method", "approach", "experiment"]
+                for keyword in [
+                    "method",
+                    "approach",
+                    "experiment",
+                    "methodology",
+                    "procedure",
+                ]
             ):
+                if current_section and section_content:
+                    sections[current_section] = "\n".join(section_content)
                 current_section = "methods"
-            elif any(
-                keyword in line_lower for keyword in ["result", "finding", "outcome"]
-            ):
-                current_section = "results"
+                section_content = []
             elif any(
                 keyword in line_lower
-                for keyword in ["conclusion", "discussion", "summary"]
+                for keyword in ["result", "finding", "outcome", "analysis", "data"]
             ):
+                if current_section and section_content:
+                    sections[current_section] = "\n".join(section_content)
+                current_section = "results"
+                section_content = []
+            elif any(
+                keyword in line_lower
+                for keyword in [
+                    "conclusion",
+                    "discussion",
+                    "implication",
+                    "future work",
+                ]
+            ):
+                if current_section and section_content:
+                    sections[current_section] = "\n".join(section_content)
                 current_section = "conclusion"
+                section_content = []
+            elif any(
+                keyword in line_lower
+                for keyword in [
+                    "statistical",
+                    "percentage",
+                    "%",
+                    "significant",
+                    "p-value",
+                ]
+            ):
+                if current_section and section_content:
+                    sections[current_section] = "\n".join(section_content)
+                current_section = "statistics"
+                section_content = []
 
-            if current_section and line.strip():
-                sections[current_section] += line + "\n"
+            if current_section and line_original:
+                section_content.append(line_original)
 
-        # Clean up sections
+        # Save the last section
+        if current_section and section_content:
+            sections[current_section] = "\n".join(section_content)
+
+        # Extract additional key information
+        sections["key_findings"] = self._extract_key_findings(text)
+        sections["methodology"] = self._extract_methodology_details(text)
+        sections["implications"] = self._extract_implications(text)
+
+        # Clean up and limit sections
         for key in sections:
-            sections[key] = sections[key].strip()[:2000]  # Limit length
+            if sections[key]:
+                sections[key] = sections[key].strip()[
+                    :3000
+                ]  # Increased limit for more content
 
         return sections
+
+    def _extract_key_findings(self, text: str) -> str:
+        """Extract key findings and statistics from text"""
+        findings = []
+        lines = text.split("\n")
+
+        for line in lines:
+            line = line.strip()
+            # Look for lines with statistics or key findings
+            if any(
+                indicator in line.lower()
+                for indicator in [
+                    "significant",
+                    "found that",
+                    "showed",
+                    "revealed",
+                    "demonstrated",
+                    "%",
+                    "p <",
+                    "p >",
+                ]
+            ):
+                if len(line) > 20 and len(line) < 200:  # Reasonable length
+                    findings.append(line)
+
+        return "\n".join(findings[:5])  # Top 5 findings
+
+    def _extract_methodology_details(self, text: str) -> str:
+        """Extract methodology details"""
+        methodology = []
+        lines = text.split("\n")
+
+        for line in lines:
+            line = line.strip()
+            # Look for methodology-related content
+            if any(
+                indicator in line.lower()
+                for indicator in [
+                    "participants",
+                    "sample",
+                    "procedure",
+                    "data collection",
+                    "analysis",
+                    "software",
+                    "tool",
+                ]
+            ):
+                if len(line) > 20 and len(line) < 200:
+                    methodology.append(line)
+
+        return "\n".join(methodology[:5])
+
+    def _extract_implications(self, text: str) -> str:
+        """Extract implications and applications"""
+        implications = []
+        lines = text.split("\n")
+
+        for line in lines:
+            line = line.strip()
+            # Look for implication-related content
+            if any(
+                indicator in line.lower()
+                for indicator in [
+                    "implication",
+                    "application",
+                    "practice",
+                    "policy",
+                    "future",
+                    "recommendation",
+                ]
+            ):
+                if len(line) > 20 and len(line) < 200:
+                    implications.append(line)
+
+        return "\n".join(implications[:5])
 
     def process_research_paper(self, pdf_path: str) -> Dict:
         """Main method to process a research paper"""

@@ -323,11 +323,13 @@ class VideoService:
 
             # Step 8: Assemble final video
             logger.info("Step 5: Assembling final video...")
+            visual_elements = paper_data.get("figures", [])
             self.video_agent.process_slides_and_audio_to_video(
                 slides_path,
                 audio_data,
                 str(self.output_base_dir / str(research_id)),
                 research_id,
+                visual_elements,
             )
 
             # Step 9: Upload video to S3

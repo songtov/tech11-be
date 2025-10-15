@@ -7,14 +7,14 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 try:
-    from moviepy.editor import (
+    from moviepy.editor import (  # type: ignore
         AudioFileClip,
         ImageClip,
         concatenate_videoclips,
     )
 except ImportError:
     # Fallback for moviepy 2.x
-    from moviepy import AudioFileClip, concatenate_videoclips, ImageClip
+    from moviepy import AudioFileClip, concatenate_videoclips, ImageClip  # type: ignore
 
 import os
 import tempfile
@@ -31,8 +31,10 @@ class VideoAgent:
         self.fps = fps
         self.resolution = resolution
 
-    def convert_pptx_to_images(self, pptx_path: str, output_dir: str) -> List[str]:
-        """Convert PowerPoint slides to images"""
+    def convert_pptx_to_images(
+        self, pptx_path: str, output_dir: str, visual_elements: List[Dict] = None
+    ) -> List[str]:
+        """Convert PowerPoint slides to professional images with visual elements"""
         try:
             # This is a simplified approach - in production you'd use python-pptx with PIL
             # or a more robust solution like LibreOffice headless
@@ -43,6 +45,15 @@ class VideoAgent:
 
             prs = Presentation(pptx_path)
 
+            # Get visual elements for inclusion
+            if visual_elements is None:
+                visual_elements = []
+
+            # Filter for important visual elements
+            important_visuals = [
+                v for v in visual_elements if v.get("is_large", False)
+            ][:3]
+
             for i, slide in enumerate(prs.slides):
                 # Create a placeholder image path
                 image_path = Path(output_dir) / f"slide_{i + 1:02d}.png"
@@ -50,10 +61,16 @@ class VideoAgent:
 
                 # Extract slide content and create image
                 slide_content = self._extract_slide_content(slide)
-                self._create_slide_image(str(image_path), slide_content)
+
+                # Get visual element for this slide
+                visual_element = (
+                    important_visuals[i] if i < len(important_visuals) else None
+                )
+
+                self._create_slide_image(str(image_path), slide_content, visual_element)
                 image_paths.append(str(image_path))
 
-            logger.info(f"Converted {len(image_paths)} slides to images")
+            logger.info(f"Converted {len(image_paths)} slides to professional images")
             return image_paths
 
         except Exception as e:
@@ -86,57 +103,74 @@ class VideoAgent:
 
         return content
 
-    def _create_slide_image(self, image_path: str, slide_content: Dict):
-        """Create a slide image with actual content"""
+    def _create_slide_image(
+        self, image_path: str, slide_content: Dict, visual_element: Dict = None
+    ):
+        """Create a professional slide image with content and visual elements"""
         try:
             from PIL import Image, ImageDraw, ImageFont
 
-            # Create image
+            # Create image with professional background
             img = Image.new("RGB", self.resolution, color="white")
             draw = ImageDraw.Draw(img)
 
-            # Load fonts
+            # Load fonts with appropriate sizes
             try:
-                title_font = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 72)
-                bullet_font = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 48)
+                title_font = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 60)
+                bullet_font = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 36)
+                small_font = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 24)
             except (OSError, IOError):
                 title_font = ImageFont.load_default()
                 bullet_font = ImageFont.load_default()
+                small_font = ImageFont.load_default()
 
-            # Draw title
+            # Draw title (left-aligned)
             title = slide_content.get("title", "Untitled Slide")
-            title_bbox = draw.textbbox((0, 0), title, font=title_font)
-            title_width = title_bbox[2] - title_bbox[0]
-            title_x = (self.resolution[0] - title_width) // 2
-            title_y = 100
+            title_x = 80  # Left margin
+            title_y = 60
 
             draw.text((title_x, title_y), title, fill=(0, 51, 102), font=title_font)
 
-            # Draw bullet points
+            # Draw bullet points (left-aligned) with proper spacing
             bullet_points = slide_content.get("bullet_points", [])
-            bullet_y = title_y + 150
+            bullet_y = title_y + 100
+            max_width = int(self.resolution[0] * 0.55)  # Use 55% of width for text
+            line_height = 45  # Line height for text
 
             for i, point in enumerate(bullet_points[:5]):  # Limit to 5 bullet points
-                if bullet_y > self.resolution[1] - 100:  # Don't go off screen
+                if (
+                    bullet_y > self.resolution[1] - 250
+                ):  # Leave space for visual element
                     break
 
-                # Draw bullet point
-                bullet_text = f"• {point}"
-                bullet_bbox = draw.textbbox((0, 0), bullet_text, font=bullet_font)
-                bullet_width = bullet_bbox[2] - bullet_bbox[0]
-                bullet_x = (self.resolution[0] - bullet_width) // 2
+                # Wrap text into lines
+                wrapped_lines = self._wrap_text_to_lines(point, bullet_font, max_width)
 
-                draw.text(
-                    (bullet_x, bullet_y),
-                    bullet_text,
-                    fill=(51, 51, 51),
-                    font=bullet_font,
-                )
-                bullet_y += 80
+                # Draw each line of the bullet point
+                for line_idx, line in enumerate(wrapped_lines):
+                    if bullet_y > self.resolution[1] - 200:
+                        break
+
+                    # Add bullet only to first line
+                    bullet_text = f"• {line}" if line_idx == 0 else f"  {line}"
+                    draw.text(
+                        (title_x, bullet_y),
+                        bullet_text,
+                        fill=(51, 51, 51),
+                        font=bullet_font,
+                    )
+                    bullet_y += line_height
+
+                # Add extra spacing between bullet points
+                bullet_y += 15
+
+            # Add visual element if provided
+            if visual_element:
+                self._add_visual_element_to_image(draw, visual_element, small_font)
 
             # Save image
             img.save(image_path)
-            logger.info(f"Created slide image: {image_path}")
+            logger.info(f"Created professional slide image: {image_path}")
 
         except ImportError:
             # Fallback: create a simple text file as placeholder
@@ -144,6 +178,118 @@ class VideoAgent:
                 f.write(f"Slide: {slide_content.get('title', 'Untitled')}")
         except Exception as e:
             logger.warning(f"Could not create slide image: {e}")
+
+    def _wrap_text_to_lines(self, text: str, font, max_width: int) -> List[str]:
+        """Wrap text into lines that fit within specified width"""
+        words = text.split()
+        lines = []
+        current_line = []
+
+        for word in words:
+            test_line = " ".join(current_line + [word])
+            bbox = font.getbbox(test_line)
+            if bbox[2] - bbox[0] <= max_width:
+                current_line.append(word)
+            else:
+                if current_line:
+                    lines.append(" ".join(current_line))
+                    current_line = [word]
+                else:
+                    lines.append(word)
+
+        if current_line:
+            lines.append(" ".join(current_line))
+
+        return lines[:4]  # Max 4 lines per bullet point
+
+    def _add_visual_element_to_image(self, draw, visual_element: Dict, font):
+        """Add visual element to slide image with proper formatting"""
+        try:
+            # Position visual element on the right side
+            right_x = int(self.resolution[0] * 0.6)
+            right_y = 80
+            table_width = int(self.resolution[0] * 0.35)
+
+            if visual_element.get("type") == "table" and visual_element.get("data"):
+                # Draw table with proper structure
+                table_title = f"Table {visual_element.get('index', 1)}"
+                draw.text((right_x, right_y), table_title, fill=(0, 51, 102), font=font)
+
+                # Draw table border
+                table_height = min(len(visual_element["data"]) * 25 + 40, 200)
+                draw.rectangle(
+                    [
+                        right_x,
+                        right_y + 25,
+                        right_x + table_width,
+                        right_y + 25 + table_height,
+                    ],
+                    outline=(0, 51, 102),
+                    width=2,
+                )
+
+                # Draw table rows
+                table_y = right_y + 35
+                for i, row in enumerate(visual_element["data"][:6]):  # Limit to 6 rows
+                    if table_y > self.resolution[1] - 100:
+                        break
+
+                    # Truncate row text to fit
+                    row_text = row[:50] + "..." if len(row) > 50 else row
+
+                    # Draw row border
+                    draw.line(
+                        [right_x, table_y, right_x + table_width, table_y],
+                        fill=(200, 200, 200),
+                        width=1,
+                    )
+
+                    # Draw row text
+                    draw.text(
+                        (right_x + 5, table_y - 10),
+                        row_text,
+                        fill=(51, 51, 51),
+                        font=font,
+                    )
+                    table_y += 25
+
+            else:
+                # Draw figure placeholder with border
+                figure_title = f"Figure {visual_element.get('index', 1)}"
+                draw.text(
+                    (right_x, right_y), figure_title, fill=(0, 51, 102), font=font
+                )
+
+                # Draw figure border
+                figure_height = 150
+                draw.rectangle(
+                    [
+                        right_x,
+                        right_y + 25,
+                        right_x + table_width,
+                        right_y + 25 + figure_height,
+                    ],
+                    outline=(0, 51, 102),
+                    width=2,
+                )
+
+                # Draw figure description
+                description = visual_element.get(
+                    "description", "Visual element from research paper"
+                )
+                wrapped_desc = self._wrap_text_to_lines(
+                    description[:100], font, table_width - 10
+                )
+
+                desc_y = right_y + 40
+                for line in wrapped_desc[:4]:  # Max 4 lines
+                    if desc_y > right_y + 25 + figure_height - 20:
+                        break
+                    draw.text((right_x + 5, desc_y), line, fill=(51, 51, 51), font=font)
+                    desc_y += 20
+
+        except Exception as e:
+            logger.warning(f"Could not add visual element to image: {e}")
 
     def create_slide_video_clips(
         self, image_paths: List[str], audio_path: str, slide_durations: List[float]
@@ -220,14 +366,17 @@ class VideoAgent:
         audio_path: str,
         output_path: str,
         slide_durations: Optional[List[float]] = None,
+        visual_elements: Optional[List[Dict]] = None,
     ) -> str:
-        """Main method to create video from slides and audio"""
-        logger.info(f"Creating video from slides: {pptx_path}")
+        """Main method to create professional video from slides and audio"""
+        logger.info(f"Creating professional video from slides: {pptx_path}")
 
         # Create temporary directory for images
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Convert slides to images
-            image_paths = self.convert_pptx_to_images(pptx_path, temp_dir)
+            # Convert slides to images with visual elements
+            image_paths = self.convert_pptx_to_images(
+                pptx_path, temp_dir, visual_elements
+            )
 
             # Create video clips
             video_clips = self.create_slide_video_clips(
@@ -240,10 +389,15 @@ class VideoAgent:
             return final_video_path
 
     def process_slides_and_audio_to_video(
-        self, slides_path: str, audio_data: Dict, output_dir: str, research_id: int
+        self,
+        slides_path: str,
+        audio_data: Dict,
+        output_dir: str,
+        research_id: int,
+        visual_elements: List[Dict] = None,
     ) -> str:
-        """Main method to process slides and audio into final video"""
-        logger.info(f"Creating final video for research ID: {research_id}")
+        """Main method to process slides and audio into final professional video"""
+        logger.info(f"Creating final professional video for research ID: {research_id}")
 
         # Create output path
         output_path = Path(output_dir) / f"video_{research_id}.mp4"
@@ -265,9 +419,9 @@ class VideoAgent:
                     logger.warning(f"Could not get duration for {audio_file}: {e}")
                     slide_durations.append(5.0)  # Default duration
 
-        # Create video
+        # Create video with visual elements
         video_path = self.create_video_from_slides_and_audio(
-            slides_path, audio_path, str(output_path), slide_durations
+            slides_path, audio_path, str(output_path), slide_durations, visual_elements
         )
 
         return video_path
