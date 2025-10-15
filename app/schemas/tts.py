@@ -65,4 +65,5 @@ class TTSPdfPathRequest(BaseModel):
 
 class TTSResearchRequest(BaseModel):
     """Research ID 기반 TTS 생성 요청"""
+
     research_id: int = Field(..., description="Research ID to generate TTS from", gt=0)
