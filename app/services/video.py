@@ -162,13 +162,22 @@ class VideoService:
             content_type = (
                 s3_obj.get("ContentType")
                 or mimetypes.guess_type(filename)[0]
-                or "application/octet-stream"
+                or "video/mp4"
             )
 
-            # Set headers
-            headers = {"Content-Disposition": f'inline; filename="{filename}"'}
+            # Set headers for video streaming
+            content_length = len(content)
+            headers = {
+                "Content-Disposition": f'inline; filename="{filename}"',
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "public, max-age=3600",
+                "Content-Length": str(content_length),
+                "Content-Type": content_type,
+            }
 
-            logger.info(f"✅ Video streamed successfully from S3: {object_key}")
+            logger.info(
+                f"✅ Video streamed successfully from S3: {object_key} ({content_length} bytes)"
+            )
             return content, content_type, headers
 
         except ClientError as e:

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, status
-from fastapi.responses import Response
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -28,7 +28,13 @@ def stream_video_by_research_id(research_id: int, db: Session = Depends(get_db))
     """Stream video file from S3 by research_id"""
     service = VideoService(db)
     content, content_type, headers = service.stream_video_by_research_id(research_id)
-    return Response(content=content, media_type=content_type, headers=headers)
+
+    # Create a streaming response with proper headers for video playback
+    from io import BytesIO
+
+    video_stream = BytesIO(content)
+
+    return StreamingResponse(video_stream, media_type=content_type, headers=headers)
 
 
 @router.post(
