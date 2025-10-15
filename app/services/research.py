@@ -10,6 +10,7 @@ from xml.etree import ElementTree as ET
 import boto3
 import requests
 from botocore.exceptions import ClientError
+from langchain_openai import AzureChatOpenAI
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -50,10 +51,19 @@ class Paper:
 
 
 class SimplifiedScholarAgent:
-    """Simplified version of AXPressScholarAgent for research search"""
+    """AI Agent-powered research paper search using LLM recommendations"""
 
     def __init__(self):
         self.base_url = "https://export.arxiv.org/api/query"
+
+        # Initialize Azure OpenAI client
+        self.llm = AzureChatOpenAI(
+            azure_deployment=settings.AOAI_DEPLOY_GPT4O_MINI,
+            azure_endpoint=settings.AOAI_ENDPOINT,
+            api_key=settings.AOAI_API_KEY,
+            api_version="2024-02-15-preview",
+            temperature=0.3,
+        )
 
         # Domain mapping from Korean enum to legacy Korean domain keys
         self.domain_mapping = {
@@ -63,6 +73,16 @@ class SimplifiedScholarAgent:
             DomainEnum.LOGISTICS: "유통/물류",
             DomainEnum.AI: "Gen AI",  # Map to legacy "Gen AI" key
             DomainEnum.CLOUD: "CLOUD",  # Map to legacy "CLOUD" key
+        }
+
+        # Domain-specific prompts for AI recommendations
+        self.domain_prompts = {
+            DomainEnum.AI: "AI의 경우에는 openai, samsung, deepseek, google, microsoft, anthropic 등과 같은 기관 및 neurips, icml, iclr, aaai 등의 저명한 학회에 올라온 최신 논문을 골라주면 되는 것이지.",
+            DomainEnum.FINANCE: "금융의 경우에는 goldman sachs, jp morgan, blackrock, citadel, two sigma 등과 같은 기관 및 AFA, WFA, NBER 등의 저명한 학회에 올라온 최신 논문을 골라주면 되는 것이지.",
+            DomainEnum.COMMUNICATION: "통신의 경우에는 qualcomm, ericsson, nokia, huawei, samsung 등과 같은 기관 및 IEEE Communications, ACM SIGCOMM 등의 저명한 학회에 올라온 최신 논문을 골라주면 되는 것이지.",
+            DomainEnum.MANUFACTURE: "제조의 경우에는 tesla, toyota, bmw, siemens, general electric 등과 같은 기관 및 IEEE Robotics, CIRP Annals 등의 저명한 학회에 올라온 최신 논문을 골라주면 되는 것이지.",
+            DomainEnum.LOGISTICS: "유통/물류의 경우에는 amazon, fedex, ups, dhl, alibaba 등과 같은 기관 및 Transportation Research, Supply Chain Management 등의 저명한 학회에 올라온 최신 논문을 골라주면 되는 것이지.",
+            DomainEnum.CLOUD: "클라우드의 경우에는 amazon web services, microsoft azure, google cloud, ibm cloud, oracle cloud 등과 같은 기관 및 IEEE Cloud Computing, ACM Computing Surveys 등의 저명한 학회에 올라온 최신 논문을 골라주면 되는 것이지.",
         }
 
         # Domain keywords (from legacy)
@@ -219,8 +239,8 @@ class SimplifiedScholarAgent:
         }
 
     def fetch_papers(self, domain: DomainEnum) -> List[Paper]:
-        """Fetch papers for the specified domain (returns exactly 5 papers with arxiv_url)"""
-        logger.info(f"Searching papers for domain: {domain}")
+        """Fetch papers using AI Agent recommendations (returns exactly 5 papers with arxiv_url)"""
+        logger.info(f"AI Agent searching papers for domain: {domain}")
 
         # Map Korean domain enum to legacy domain key
         legacy_domain_key = self.domain_mapping.get(domain)
@@ -229,41 +249,29 @@ class SimplifiedScholarAgent:
             return []
 
         try:
-            # Try Semantic Scholar + arXiv approach first
-            papers = self._fetch_highly_cited_papers(legacy_domain_key)
+            # Step 1: Get AI recommendations
+            logger.info(f"Getting AI recommendations for domain: {domain}")
+            ai_recommendations = self._get_ai_recommendations(domain)
 
-            # Filter out papers without arxiv_url
-            papers = [p for p in papers if p.arxiv_url and p.arxiv_url.strip()]
+            if not ai_recommendations:
+                logger.warning(
+                    "AI recommendations failed, falling back to traditional search"
+                )
+                return self._fallback_search(legacy_domain_key)
+
+            # Step 2: Search arXiv for recommended papers
             logger.info(
-                f"Found {len(papers)} papers with ArXiv URLs from Semantic Scholar"
+                f"Searching arXiv for {len(ai_recommendations)} AI-recommended papers"
             )
+            papers = self._search_arxiv_by_recommendations(ai_recommendations)
 
-            # If not enough papers, fallback to arXiv only (which should always have arxiv_url)
+            # Step 3: If not enough papers found, supplement with additional search
             if len(papers) < 5:
                 logger.info(
-                    "Not enough papers with ArXiv URLs from Semantic Scholar, trying arXiv fallback"
+                    f"Found {len(papers)} papers, supplementing with additional search"
                 )
-                arxiv_papers = self._search_arxiv_papers(
-                    legacy_domain_key,
-                    max_results=20,  # Increased to get more candidates
-                )
-
-                # Combine and deduplicate (arXiv papers should always have arxiv_url)
-                existing_titles = {p.title.lower() for p in papers}
-                for paper in arxiv_papers:
-                    if (
-                        paper.title.lower() not in existing_titles
-                        and paper.arxiv_url
-                        and paper.arxiv_url.strip()
-                        and len(papers) < 5
-                    ):
-                        papers.append(paper)
-
-            # If still not enough, try more arXiv papers
-            if len(papers) < 5:
-                logger.info("Still need more papers, trying additional arXiv search")
                 additional_papers = self._search_arxiv_papers(
-                    legacy_domain_key, max_results=30, start_offset=20
+                    legacy_domain_key, max_results=10
                 )
 
                 existing_titles = {p.title.lower() for p in papers}
@@ -276,37 +284,204 @@ class SimplifiedScholarAgent:
                     ):
                         papers.append(paper)
 
-            # If still not enough, try fetching by known arXiv IDs
+            # Step 4: Final fallback with dummy papers if still not enough
             if len(papers) < 5:
-                logger.info(f"Using known arXiv papers for domain: {legacy_domain_key}")
-                known_papers = self._fetch_known_arxiv_papers(legacy_domain_key)
+                logger.info(f"Still need {5 - len(papers)} more papers, using fallback")
+                fallback_papers = self._fallback_search(legacy_domain_key)
 
                 existing_titles = {p.title.lower() for p in papers}
-                for paper in known_papers:
+                for paper in fallback_papers:
                     if paper.title.lower() not in existing_titles and len(papers) < 5:
                         papers.append(paper)
-
-            # If still not enough papers, create relevant dummy papers
-            if len(papers) < 5:
-                logger.info(
-                    f"Creating relevant dummy papers for domain: {legacy_domain_key} (current count: {len(papers)})"
-                )
-                dummy_papers = self._create_relevant_dummy_papers(
-                    legacy_domain_key, len(papers)
-                )
-                logger.info(f"Created {len(dummy_papers)} dummy papers")
-
-                existing_titles = {p.title.lower() for p in papers}
-                for paper in dummy_papers:
-                    if paper.title.lower() not in existing_titles and len(papers) < 5:
-                        papers.append(paper)
-                        logger.info(f"Added dummy paper: {paper.title[:50]}...")
 
             # Ensure exactly 5 papers
             return papers[:5]
 
         except Exception as e:
-            logger.error(f"Error fetching papers: {e}")
+            logger.error(f"Error in AI-powered paper search: {e}")
+            return self._fallback_search(legacy_domain_key)
+
+    def _get_ai_recommendations(self, domain: DomainEnum) -> List[Dict[str, str]]:
+        """Get paper recommendations from AI Agent"""
+        try:
+            # Get domain-specific prompt
+            domain_example = self.domain_prompts.get(domain, "")
+
+            prompt = f"""
+***{domain.value} 도메인에 대해 공부하고자해. 학습자료로는 논문을 사용할 것이야. 
+너는 나에게 논문을 추천해주는 에이전트야. 추천 기준으로는 '{domain.value} 도메인에서 업계를 선도하고있는 기업, 또는 연구소급에서 개제한 논문을 찾아줘'. 
+
+{domain_example}
+
+단, 반드시 https://arxiv.org/에 있는 논문을 5편 추천해줘. 
+글고 논문의 제목, 저자, 년도만 정보를 추출해줘.
+
+응답 형식:
+제목: [논문 제목]
+저자: [저자명들]
+년도: [발행년도]
+arXiv ID: [arXiv ID]
+
+이런 형식으로 5개 논문을 추천해줘.
+"""
+
+            logger.info(f"Sending prompt to AI for domain: {domain.value}")
+            response = self.llm.invoke(prompt)
+
+            # Parse AI response
+            recommendations = self._parse_ai_recommendations(response.content)
+            logger.info(f"AI recommended {len(recommendations)} papers")
+
+            return recommendations
+
+        except Exception as e:
+            logger.error(f"Error getting AI recommendations: {e}")
+            return []
+
+    def _parse_ai_recommendations(self, ai_response: str) -> List[Dict[str, str]]:
+        """Parse AI response to extract paper recommendations"""
+        recommendations = []
+
+        try:
+            # Split response by paper entries
+            lines = ai_response.strip().split("\n")
+            current_paper = {}
+
+            for line in lines:
+                line = line.strip()
+                if line.startswith("제목:"):
+                    if current_paper:  # Save previous paper
+                        recommendations.append(current_paper)
+                    current_paper = {"title": line.replace("제목:", "").strip()}
+                elif line.startswith("저자:"):
+                    current_paper["authors"] = line.replace("저자:", "").strip()
+                elif line.startswith("년도:"):
+                    current_paper["year"] = line.replace("년도:", "").strip()
+                elif line.startswith("arXiv ID:"):
+                    current_paper["arxiv_id"] = line.replace("arXiv ID:", "").strip()
+
+            # Add last paper
+            if (
+                current_paper and len(current_paper) >= 3
+            ):  # At least title, authors, year
+                recommendations.append(current_paper)
+
+            # Validate and clean recommendations
+            valid_recommendations = []
+            for rec in recommendations:
+                if rec.get("title") and rec.get("authors") and rec.get("year"):
+                    # Extract arXiv ID from title or use provided ID
+                    arxiv_id = rec.get("arxiv_id", "")
+                    if not arxiv_id:
+                        # Try to extract arXiv ID from title
+                        arxiv_match = re.search(
+                            r"(\d{4}\.\d{4,5}(?:v\d+)?)", rec["title"]
+                        )
+                        if arxiv_match:
+                            arxiv_id = arxiv_match.group(1)
+
+                    if arxiv_id:
+                        rec["arxiv_id"] = arxiv_id
+                        valid_recommendations.append(rec)
+
+            logger.info(f"Parsed {len(valid_recommendations)} valid recommendations")
+            return valid_recommendations
+
+        except Exception as e:
+            logger.error(f"Error parsing AI recommendations: {e}")
+            return []
+
+    def _search_arxiv_by_recommendations(
+        self, recommendations: List[Dict[str, str]]
+    ) -> List[Paper]:
+        """Search arXiv for AI-recommended papers"""
+        papers = []
+
+        for rec in recommendations:
+            try:
+                arxiv_id = rec.get("arxiv_id", "")
+                if not arxiv_id:
+                    continue
+
+                # Clean arXiv ID (remove version if present for search)
+                clean_id = re.sub(r"v\d+$", "", arxiv_id)
+
+                # Search arXiv by ID
+                paper = self._fetch_paper_by_arxiv_id(clean_id)
+                if paper:
+                    papers.append(paper)
+                    logger.info(f"Found paper: {paper.title[:50]}...")
+                else:
+                    logger.warning(f"Could not find paper with arXiv ID: {clean_id}")
+
+            except Exception as e:
+                logger.error(
+                    f"Error searching for paper {rec.get('title', 'unknown')}: {e}"
+                )
+                continue
+
+        return papers
+
+    def _fetch_paper_by_arxiv_id(self, arxiv_id: str) -> Optional[Paper]:
+        """Fetch a specific paper from arXiv by ID"""
+        try:
+            params = {
+                "id_list": arxiv_id,
+                "max_results": 1,
+            }
+
+            response = requests.get(self.base_url, params=params, timeout=30)
+            response.raise_for_status()
+
+            # Parse XML response
+            root = ET.fromstring(response.content)
+            ns = {
+                "atom": "http://www.w3.org/2005/Atom",
+                "arxiv": "http://arxiv.org/schemas/atom",
+            }
+
+            entries = root.findall("atom:entry", ns)
+            if entries:
+                return self._parse_arxiv_entry(entries[0], ns)
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Error fetching paper by arXiv ID {arxiv_id}: {e}")
+            return None
+
+    def _fallback_search(self, legacy_domain_key: str) -> List[Paper]:
+        """Fallback to traditional search methods"""
+        try:
+            logger.info(f"Using fallback search for domain: {legacy_domain_key}")
+
+            # Try arXiv search first
+            papers = self._search_arxiv_papers(legacy_domain_key, max_results=10)
+
+            # If not enough, try known papers
+            if len(papers) < 5:
+                known_papers = self._fetch_known_arxiv_papers(legacy_domain_key)
+                existing_titles = {p.title.lower() for p in papers}
+
+                for paper in known_papers:
+                    if paper.title.lower() not in existing_titles and len(papers) < 5:
+                        papers.append(paper)
+
+            # Final fallback: dummy papers
+            if len(papers) < 5:
+                dummy_papers = self._create_relevant_dummy_papers(
+                    legacy_domain_key, len(papers)
+                )
+                existing_titles = {p.title.lower() for p in papers}
+
+                for paper in dummy_papers:
+                    if paper.title.lower() not in existing_titles and len(papers) < 5:
+                        papers.append(paper)
+
+            return papers[:5]
+
+        except Exception as e:
+            logger.error(f"Error in fallback search: {e}")
             return []
 
     def _fetch_known_arxiv_papers(self, legacy_domain_key: str) -> List[Paper]:
