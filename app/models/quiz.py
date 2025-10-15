@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.types import JSON, DateTime
 

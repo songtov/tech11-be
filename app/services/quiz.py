@@ -16,8 +16,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.repositories.research_repository import ResearchRepository
 from app.repositories.quiz_repository import QuizRepository
+from app.repositories.research_repository import ResearchRepository
 from app.schemas.quiz import QuestionResponse, QuizCreate, QuizResponse
 
 # Set up logging
