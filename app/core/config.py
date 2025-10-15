@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "FastAPI Tech11 Backend"
 
     # Azure OpenAI Configuration
-    AOAI_ENDPOINT: str = ""
+    AOAI_ENDPOINT: str = "https://skcc-atl-dev-openai-01.openai.azure.com/"
     AOAI_API_KEY: str = ""
     AOAI_DEPLOY_GPT4O_MINI: str = "gpt-4o-mini"
     AOAI_DEPLOY_GPT4O: str = "gpt-4o"
