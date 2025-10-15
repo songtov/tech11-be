@@ -11,7 +11,9 @@ from typing import Any, Dict, List, TypedDict
 import boto3
 from botocore.exceptions import ClientError
 from gtts import gTTS
+from langchain.retrievers import EnsembleRetriever
 from langchain_community.document_loaders import PyMuPDFLoader
+from langchain_community.retrievers import BM25Retriever
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
@@ -206,9 +208,9 @@ class TTSService:
         return loader.load()
 
     def _build_vectorstore(
-        self, docs: List[Document], chunk_size: int = 1000, chunk_overlap: int = 200
+        self, docs: List[Document], chunk_size: int = 1500, chunk_overlap: int = 300
     ):
-        """FAISS 벡터스토어 구축"""
+        """하이브리드 검색을 위한 벡터스토어 및 리트리버 구축 (FAISS + BM25)"""
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size, chunk_overlap=chunk_overlap
         )
@@ -221,9 +223,25 @@ class TTSService:
             prefix = f"[source: {os.path.basename(src)} | page: {page}] "
             d.page_content = prefix + d.page_content
 
+        # 1. FAISS 벡터 검색 (Dense Retrieval)
         embeddings = self._build_embeddings()
-        vs = FAISS.from_documents(splits, embeddings)
-        return vs
+        faiss_vectorstore = FAISS.from_documents(splits, embeddings)
+        faiss_retriever = faiss_vectorstore.as_retriever(search_kwargs={"k": 12})
+
+        # 2. BM25 키워드 검색 (Sparse Retrieval)
+        bm25_retriever = BM25Retriever.from_documents(splits)
+        bm25_retriever.k = 12
+
+        # 3. 하이브리드 앙상블 리트리버 (가중치: FAISS 0.6, BM25 0.4)
+        hybrid_retriever = EnsembleRetriever(
+            retrievers=[faiss_retriever, bm25_retriever],
+            weights=[0.6, 0.4],  # 벡터 검색에 더 높은 가중치
+        )
+
+        # 기존 코드와의 호환성을 위해 vectorstore 객체에 hybrid_retriever 추가
+        faiss_vectorstore.hybrid_retriever = hybrid_retriever
+
+        return faiss_vectorstore
 
     # =====================================================
     # 3️⃣ 프롬프트 체인들 (Legacy 통합)
@@ -238,8 +256,8 @@ class TTSService:
 2) 연구 배경과 문제 정의
 3) 핵심 기술과 방법론
 4) 주요 결과와 성능
-5) 기술적 시사점과 한계
-6) 핵심 키워드
+5) 기술적 시사점과 해당 도메인을 넘어 AI 및 DT 시장에 적용할 수 있는 방향 제시
+6) 핵심 키워드 다시 한 번 설명. 해당 문서의 핵심 용어 및 새로운 개념에 대해 짚어주기.
 
 문서 내용:
 {document_content}
@@ -248,46 +266,66 @@ class TTSService:
         return prompt | self._build_llm(use_mini=True) | StrOutputParser()
 
     def _make_explainer_chain(self):
-        """해설 생성 체인"""
+        """해설 생성 체인 - 열정적인 강사 스타일"""
         prompt = PromptTemplate.from_template(
-            """당신은 전문 해설가입니다. 아래 문서를 바탕으로 한국어 해설 스크립트를 작성하세요.
+            """당신은 열정적인 강사입니다. 학생들이 흥미를 가지고 쉽게 이해할 수 있도록 친근하고 구어체로 설명하세요.
 
-구성:
-1) 논문의 상세 설명
-2) 일반인도 이해할 수 있는 쉬운 설명
-3) 산업 현장에서의 적용 시나리오 2~3가지
+**중요한 규칙:**
+- 제목, 헤더, 번호 매기기를 절대 사용하지 마세요 (예: ###, ####, 1), 2) 등)
+- 마크다운 형식(###, **, ---, #### 등)을 사용하지 마세요
+- 괄호 ()를 스크립트로 만들지 말고, 서술을 통해 말해줘. 예를 들어 기존의 'LSTM(LongShortTermMemory)' 을 'LongShortTermMemory로 불리우는 LSTM은' 으로 수정
+- "한국어 해설 스크립트", "논문의 상세 설명", "일반인도 이해할 수 있는 쉬운 설명" 같은 메타 정보를 쓰지 마세요
+- 구어체를 사용하세요 (~해요, ~이에요, ~거든요, ~네요, ~잖아요 등)
+- 청취자에게 직접 말하듯이 작성하세요 ("여러분", "우리", "~해볼까요?", "~보세요" 등)
+- 열정적이고 친근한 톤으로 작성하세요
+- 복잡한 용어는 일상적인 비유나 예시로 풀어서 설명하세요
+
+**내용 구성:**
+자연스러운 이야기 흐름으로 다음을 포함하세요:
+1. 연구 주제를 흥미롭게 소개하며 시작. 다만, 첫 소개에서는 전문적인 용어를 그대로 사용하여 명확하게 내용을 전달.
+2. 핵심 개념을 쉬운 비유와 예시로 설명
+3. 수식 및 실험 결과 설명에 대해서는 명확하게 전문 용어를 그대로 사용할 것.
+4. 실제 산업 현장에서의 활용 사례 2-3가지를 구체적으로 소개(가능하다면, AI 및 IT 서비스와 연결지으면 좋을 것.)
+5. 이 연구의 의의와 함께 왜 이 연구가 중요한지 마무리로 설명.
 
 문서 내용:
 {document_content}
-"""
+
+이제 학생들이 집중하며 들을 수 있도록, 친근하고 열정적으로 설명을 시작하세요:"""
         )
-        return prompt | self._build_llm(use_mini=False) | StrOutputParser()
+        return (
+            prompt
+            | self._build_llm(use_mini=False, temperature=0.5)
+            | StrOutputParser()
+        )
 
     # =====================================================
     # 4️⃣ LangGraph 노드들 (Legacy 통합)
     # =====================================================
     def _node_summarizer(self, state: AgentState) -> AgentState:
-        """요약 생성 노드"""
+        """요약 생성 노드 - 하이브리드 검색 사용"""
         vs = state["vectorstore"]
-        k = state.get("k", 12)
-        chunks = vs.similarity_search("summary overview of this document", k=k)
+        query = "summary overview of this document"
+
+        # 하이브리드 검색 사용 (FAISS + BM25)
+        chunks = vs.hybrid_retriever.get_relevant_documents(query)
         content = "\n\n".join([c.page_content for c in chunks])
 
-        logger.info("📝 요약 생성 중...")
+        logger.info("📝 요약 생성 중... (하이브리드 검색)")
         summary_chain = self._make_summary_chain()
         summary = summary_chain.invoke({"document_content": content})
         return {"summary": summary}
 
     def _node_explainer(self, state: AgentState) -> AgentState:
-        """해설 생성 노드"""
+        """해설 생성 노드 - 하이브리드 검색 사용"""
         vs = state["vectorstore"]
-        k = state.get("k", 15)
-        chunks = vs.similarity_search(
-            "detailed explanation with industry applications", k=k
-        )
+        query = "detailed explanation with industry applications"
+
+        # 하이브리드 검색 사용 (FAISS + BM25)
+        chunks = vs.hybrid_retriever.get_relevant_documents(query)
         content = "\n\n".join([c.page_content for c in chunks])
 
-        logger.info("📖 해설 생성 중...")
+        logger.info("📖 해설 생성 중... (하이브리드 검색)")
         explainer_chain = self._make_explainer_chain()
         explainer = explainer_chain.invoke({"document_content": content})
         return {"explainer": explainer}
@@ -312,7 +350,7 @@ class TTSService:
             logger.info("✅ 벡터스토어 구축 완료")
 
             # 3. 상태 초기화
-            state: AgentState = {"vectorstore": vs, "k": 12}
+            state: AgentState = {"vectorstore": vs, "k": 20}
 
             # 4. 요약 생성
             summary_result = self._node_summarizer(state)
