@@ -226,6 +226,12 @@ class VoiceAgent:
             full_script, str(output_path), research_id
         )
 
+        # Save transcript file for PyToon animation
+        transcript_path = output_path / f"transcript_{research_id}.txt"
+        with open(transcript_path, "w", encoding="utf-8") as f:
+            f.write(full_script)
+        logger.info(f"Saved transcript file: {transcript_path}")
+
         # Create individual slide audio segments
         slide_scripts = script_data["slide_scripts"]
         slide_audio_files = self.create_slide_audio_segments(
@@ -234,6 +240,7 @@ class VoiceAgent:
 
         return {
             "full_audio_path": full_audio_path,
+            "transcript_path": str(transcript_path),
             "slide_audio_files": slide_audio_files,
             "estimated_duration": script_data["total_duration_estimate"],
             "word_count": script_data["total_word_count"],
