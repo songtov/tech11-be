@@ -13,12 +13,12 @@ from botocore.exceptions import ClientError
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from app.agents.figure_agent import FigureAgent
 from app.agents.reader_agent import ReaderAgent
 from app.agents.script_agent import ScriptAgent
 from app.agents.slide_agent import SlideAgent
 from app.agents.video_agent import VideoAgent
 from app.agents.voice_agent import VoiceAgent
-from app.agents.figure_agent import FigureAgent
 from app.core.config import settings
 from app.repositories.research_repository import ResearchRepository
 from app.repositories.video_repository import VideoRepository
