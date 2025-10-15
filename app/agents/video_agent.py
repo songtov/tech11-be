@@ -388,12 +388,10 @@ class VideoAgent:
             logger.warning(
                 "Transcript not available, using base video without animation"
             )
-            final_video_path_str = base_video_path_str
             # Copy base video to final path if no animation
-            if base_video_path_str != str(final_video_path):
-                import shutil
-
-                shutil.copy2(base_video_path_str, str(final_video_path))
+            import shutil
+            shutil.copy2(base_video_path_str, str(final_video_path))
+            final_video_path_str = str(final_video_path)
 
         # Clean up temporary base video file
         try:
@@ -419,9 +417,11 @@ class VideoAgent:
         try:
             if animate is None:
                 logger.warning(
-                    "PyToon not available, returning base video without animation"
+                    "PyToon not available, copying base video without animation"
                 )
-                return base_video_path
+                import shutil
+                shutil.copy2(base_video_path, output_path)
+                return output_path
 
             logger.info("Creating PyToon animation overlay...")
 
@@ -454,4 +454,6 @@ class VideoAgent:
         except Exception as e:
             logger.error(f"Error adding animation overlay: {e}")
             logger.warning("Falling back to base video without animation")
-            return base_video_path
+            import shutil
+            shutil.copy2(base_video_path, output_path)
+            return output_path
