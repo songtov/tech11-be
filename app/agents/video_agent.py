@@ -32,9 +32,12 @@ class VideoAgent:
         self.resolution = resolution
 
     def convert_pptx_to_images(
-        self, pptx_path: str, output_dir: str, visual_elements: List[Dict] = None
+        self,
+        pptx_path: str,
+        output_dir: str,
+        generated_figures: List[Optional[str]] = None,
     ) -> List[str]:
-        """Convert PowerPoint slides to professional images with visual elements"""
+        """Convert PowerPoint slides to professional images with generated figures"""
         try:
             # This is a simplified approach - in production you'd use python-pptx with PIL
             # or a more robust solution like LibreOffice headless
@@ -45,14 +48,9 @@ class VideoAgent:
 
             prs = Presentation(pptx_path)
 
-            # Get visual elements for inclusion
-            if visual_elements is None:
-                visual_elements = []
-
-            # Filter for important visual elements
-            important_visuals = [
-                v for v in visual_elements if v.get("is_large", False)
-            ][:3]
+            # Get generated figures for inclusion
+            if generated_figures is None:
+                generated_figures = []
 
             for i, slide in enumerate(prs.slides):
                 # Create a placeholder image path
@@ -62,12 +60,12 @@ class VideoAgent:
                 # Extract slide content and create image
                 slide_content = self._extract_slide_content(slide)
 
-                # Get visual element for this slide
-                visual_element = (
-                    important_visuals[i] if i < len(important_visuals) else None
+                # Get figure path for this slide
+                figure_path = (
+                    generated_figures[i] if i < len(generated_figures) else None
                 )
 
-                self._create_slide_image(str(image_path), slide_content, visual_element)
+                self._create_slide_image(str(image_path), slide_content, figure_path)
                 image_paths.append(str(image_path))
 
             logger.info(f"Converted {len(image_paths)} slides to professional images")
@@ -104,9 +102,9 @@ class VideoAgent:
         return content
 
     def _create_slide_image(
-        self, image_path: str, slide_content: Dict, visual_element: Dict = None
+        self, image_path: str, slide_content: Dict, figure_path: Optional[str] = None
     ):
-        """Create a professional slide image with content and visual elements"""
+        """Create a professional slide image with content and generated figure"""
         try:
             from PIL import Image, ImageDraw, ImageFont
 
@@ -118,11 +116,9 @@ class VideoAgent:
             try:
                 title_font = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 60)
                 bullet_font = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 36)
-                small_font = ImageFont.truetype("/System/Library/Fonts/Arial.ttf", 24)
             except (OSError, IOError):
                 title_font = ImageFont.load_default()
                 bullet_font = ImageFont.load_default()
-                small_font = ImageFont.load_default()
 
             # Draw title (left-aligned)
             title = slide_content.get("title", "Untitled Slide")
@@ -164,9 +160,9 @@ class VideoAgent:
                 # Add extra spacing between bullet points
                 bullet_y += 15
 
-            # Add visual element if provided
-            if visual_element:
-                self._add_visual_element_to_image(draw, visual_element, small_font)
+            # Add generated figure if provided
+            if figure_path and Path(figure_path).exists():
+                self._add_figure_to_image(img, figure_path)
 
             # Save image
             img.save(image_path)
@@ -202,94 +198,28 @@ class VideoAgent:
 
         return lines[:4]  # Max 4 lines per bullet point
 
-    def _add_visual_element_to_image(self, draw, visual_element: Dict, font):
-        """Add visual element to slide image with proper formatting"""
+    def _add_figure_to_image(self, img, figure_path: str):
+        """Add generated figure to slide image in top-right corner"""
         try:
-            # Position visual element on the right side
+            from PIL import Image
+
+            # Load the generated figure
+            figure_img = Image.open(figure_path)
+
+            # Resize figure to fit in top-right corner (600x400 -> 500x350)
+            figure_img = figure_img.resize((500, 350), Image.Resampling.LANCZOS)
+
+            # Position in top-right corner (starting at 60% width)
             right_x = int(self.resolution[0] * 0.6)
             right_y = 80
-            table_width = int(self.resolution[0] * 0.35)
 
-            if visual_element.get("type") == "table" and visual_element.get("data"):
-                # Draw table with proper structure
-                table_title = f"Table {visual_element.get('index', 1)}"
-                draw.text((right_x, right_y), table_title, fill=(0, 51, 102), font=font)
+            # Paste figure onto slide image
+            img.paste(figure_img, (right_x, right_y))
 
-                # Draw table border
-                table_height = min(len(visual_element["data"]) * 25 + 40, 200)
-                draw.rectangle(
-                    [
-                        right_x,
-                        right_y + 25,
-                        right_x + table_width,
-                        right_y + 25 + table_height,
-                    ],
-                    outline=(0, 51, 102),
-                    width=2,
-                )
-
-                # Draw table rows
-                table_y = right_y + 35
-                for i, row in enumerate(visual_element["data"][:6]):  # Limit to 6 rows
-                    if table_y > self.resolution[1] - 100:
-                        break
-
-                    # Truncate row text to fit
-                    row_text = row[:50] + "..." if len(row) > 50 else row
-
-                    # Draw row border
-                    draw.line(
-                        [right_x, table_y, right_x + table_width, table_y],
-                        fill=(200, 200, 200),
-                        width=1,
-                    )
-
-                    # Draw row text
-                    draw.text(
-                        (right_x + 5, table_y - 10),
-                        row_text,
-                        fill=(51, 51, 51),
-                        font=font,
-                    )
-                    table_y += 25
-
-            else:
-                # Draw figure placeholder with border
-                figure_title = f"Figure {visual_element.get('index', 1)}"
-                draw.text(
-                    (right_x, right_y), figure_title, fill=(0, 51, 102), font=font
-                )
-
-                # Draw figure border
-                figure_height = 150
-                draw.rectangle(
-                    [
-                        right_x,
-                        right_y + 25,
-                        right_x + table_width,
-                        right_y + 25 + figure_height,
-                    ],
-                    outline=(0, 51, 102),
-                    width=2,
-                )
-
-                # Draw figure description
-                description = visual_element.get(
-                    "description", "Visual element from research paper"
-                )
-                wrapped_desc = self._wrap_text_to_lines(
-                    description[:100], font, table_width - 10
-                )
-
-                desc_y = right_y + 40
-                for line in wrapped_desc[:4]:  # Max 4 lines
-                    if desc_y > right_y + 25 + figure_height - 20:
-                        break
-                    draw.text((right_x + 5, desc_y), line, fill=(51, 51, 51), font=font)
-                    desc_y += 20
+            logger.info(f"Added figure to slide at position ({right_x}, {right_y})")
 
         except Exception as e:
-            logger.warning(f"Could not add visual element to image: {e}")
+            logger.warning(f"Could not add figure to image: {e}")
 
     def create_slide_video_clips(
         self, image_paths: List[str], audio_path: str, slide_durations: List[float]
@@ -366,16 +296,16 @@ class VideoAgent:
         audio_path: str,
         output_path: str,
         slide_durations: Optional[List[float]] = None,
-        visual_elements: Optional[List[Dict]] = None,
+        generated_figures: Optional[List[Optional[str]]] = None,
     ) -> str:
         """Main method to create professional video from slides and audio"""
         logger.info(f"Creating professional video from slides: {pptx_path}")
 
         # Create temporary directory for images
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Convert slides to images with visual elements
+            # Convert slides to images with generated figures
             image_paths = self.convert_pptx_to_images(
-                pptx_path, temp_dir, visual_elements
+                pptx_path, temp_dir, generated_figures
             )
 
             # Create video clips
@@ -394,7 +324,7 @@ class VideoAgent:
         audio_data: Dict,
         output_dir: str,
         research_id: int,
-        visual_elements: List[Dict] = None,
+        generated_figures: List[Optional[str]] = None,
     ) -> str:
         """Main method to process slides and audio into final professional video"""
         logger.info(f"Creating final professional video for research ID: {research_id}")
@@ -419,9 +349,13 @@ class VideoAgent:
                     logger.warning(f"Could not get duration for {audio_file}: {e}")
                     slide_durations.append(5.0)  # Default duration
 
-        # Create video with visual elements
+        # Create video with generated figures
         video_path = self.create_video_from_slides_and_audio(
-            slides_path, audio_path, str(output_path), slide_durations, visual_elements
+            slides_path,
+            audio_path,
+            str(output_path),
+            slide_durations,
+            generated_figures,
         )
 
         return video_path

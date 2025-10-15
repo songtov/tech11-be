@@ -18,6 +18,7 @@ from app.agents.script_agent import ScriptAgent
 from app.agents.slide_agent import SlideAgent
 from app.agents.video_agent import VideoAgent
 from app.agents.voice_agent import VoiceAgent
+from app.agents.figure_agent import FigureAgent
 from app.core.config import settings
 from app.repositories.research_repository import ResearchRepository
 from app.repositories.video_repository import VideoRepository
@@ -77,6 +78,11 @@ class VideoService:
             )
             self.voice_agent = VoiceAgent()
             self.video_agent = VideoAgent()
+            self.figure_agent = FigureAgent(
+                azure_endpoint=settings.AOAI_ENDPOINT,
+                api_key=settings.AOAI_API_KEY,
+                deployment_name=settings.AOAI_DEPLOY_GPT4O_MINI,
+            )
 
             logger.info("All agents initialized successfully with Azure OpenAI")
 
@@ -305,14 +311,22 @@ class VideoService:
 
             # Step 5: Create slides with slide agent
             logger.info("Step 2: Creating presentation slides...")
+            slides_data = self.slide_agent.generate_slide_content(paper_data)
             slides_path = self.slide_agent.process_paper_to_slides(
                 paper_data, str(self.output_base_dir / str(research_id)), research_id
+            )
+
+            # Step 5.5: Generate figures with figure agent
+            logger.info("Step 2.5: Generating figures...")
+            figures_dir = str(self.output_base_dir / str(research_id) / "figures")
+            generated_figures = self.figure_agent.process_slides_to_figures(
+                slides_data, figures_dir
             )
 
             # Step 6: Generate narration script
             logger.info("Step 3: Generating narration script...")
             script_data = self.script_agent.process_slides_to_script(
-                self.slide_agent.generate_slide_content(paper_data), paper_data
+                slides_data, paper_data
             )
 
             # Step 7: Convert script to audio
@@ -323,13 +337,12 @@ class VideoService:
 
             # Step 8: Assemble final video
             logger.info("Step 5: Assembling final video...")
-            visual_elements = paper_data.get("figures", [])
             self.video_agent.process_slides_and_audio_to_video(
                 slides_path,
                 audio_data,
                 str(self.output_base_dir / str(research_id)),
                 research_id,
-                visual_elements,
+                generated_figures,
             )
 
             # Step 9: Upload video to S3

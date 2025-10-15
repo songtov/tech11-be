@@ -56,8 +56,9 @@ class SlideAgent:
         - Technical terms with explanations
         - Professional academic language
 
-        Return a JSON list of exactly 2-3 slides with title and bullet_points fields.
-        Each bullet point should be detailed and informative (50-100 words each)."""
+        Return a JSON list of exactly 2-3 slides with title, bullet_points, and visualization_suggestion fields.
+        Each bullet point should be detailed and informative (50-100 words each).
+        Include visualization_suggestion with hints about what data could be visualized (e.g., "statistics", "comparisons", "trends", "methodology")."""
 
         sections = paper_data.get("sections", {})
         structure = paper_data.get("structure", {})
@@ -161,6 +162,7 @@ class SlideAgent:
                         f"Study Design: {sections.get('methods', '')[:200] if sections.get('methods') else 'Rigorous experimental design'}",
                         f"Data Collection: {sections.get('statistics', '')[:200] if sections.get('statistics') else 'Comprehensive data analysis'}",
                     ],
+                    "visualization_suggestion": "methodology",
                 }
             )
 
@@ -180,6 +182,7 @@ class SlideAgent:
                         f"Data Analysis: {sections.get('results', '')[:200] if sections.get('results') else 'Comprehensive data interpretation'}",
                         f"Research Impact: {sections.get('implications', '')[:200] if sections.get('implications') else 'Meaningful research contributions'}",
                     ],
+                    "visualization_suggestion": "statistics",
                 }
             )
 
@@ -198,6 +201,7 @@ class SlideAgent:
                         f"Future Research: {sections.get('implications', '')[:200] if sections.get('implications') else 'Directions for future investigation'}",
                         f"Policy Recommendations: {sections.get('implications', '')[:200] if sections.get('implications') else 'Evidence-based recommendations'}",
                     ],
+                    "visualization_suggestion": "trends",
                 }
             )
 
@@ -213,6 +217,7 @@ class SlideAgent:
                         "Significant findings and contributions",
                         "Practical implications and applications",
                     ],
+                    "visualization_suggestion": "methodology",
                 },
                 {
                     "title": "Key Research Findings",
@@ -223,6 +228,7 @@ class SlideAgent:
                         "Research impact and contributions",
                         "Evidence-based recommendations",
                     ],
+                    "visualization_suggestion": "statistics",
                 },
                 {
                     "title": "Implications & Future Work",
@@ -233,6 +239,7 @@ class SlideAgent:
                         "Long-term impact assessment",
                         "Continued investigation opportunities",
                     ],
+                    "visualization_suggestion": "trends",
                 },
             ]
 
