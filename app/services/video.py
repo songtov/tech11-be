@@ -76,7 +76,8 @@ class VideoService:
                 api_key=settings.AOAI_API_KEY,
                 deployment_name=settings.AOAI_DEPLOY_GPT4O_MINI,
             )
-            self.voice_agent = VoiceAgent()
+            # VoiceAgent will be initialized per request based on tts_mode
+            self.voice_agent = None
             self.video_agent = VideoAgent()
             self.figure_agent = FigureAgent(
                 azure_endpoint=settings.AOAI_ENDPOINT,
@@ -89,6 +90,29 @@ class VideoService:
         except Exception as e:
             logger.error(f"Error initializing agents: {e}")
             raise
+
+    def _initialize_voice_agent(self, tts_mode: str):
+        """Initialize voice agent based on TTS mode"""
+        if tts_mode == "pro":
+            # Typecast AI configuration
+            self.voice_agent = VoiceAgent(
+                tts_mode="pro",
+                endpoint=settings.TTS_ENDPOINT,
+                api_key=settings.TTS_API_KEY,
+                voice_id=settings.TTS_VOICE_ID,
+                model=settings.TTS_MODEL,
+                language=settings.TTS_LANGUAGE,
+                emotion_preset=settings.TTS_EMOTION_PRESET,
+                emotion_intensity=settings.TTS_EMOTION_INTENSITY,
+                volume=settings.TTS_VOLUME,
+                audio_pitch=settings.TTS_AUDIO_PITCH,
+                audio_tempo=settings.TTS_AUDIO_TEMPO,
+            )
+            logger.info("VoiceAgent initialized with Typecast AI (pro mode)")
+        else:
+            # gTTS configuration (standard mode)
+            self.voice_agent = VoiceAgent(tts_mode="standard")
+            logger.info("VoiceAgent initialized with gTTS (standard mode)")
 
     # =====================================================
     # S3 Helper Methods
@@ -329,8 +353,11 @@ class VideoService:
                 slides_data, paper_data
             )
 
-            # Step 7: Convert script to audio
-            logger.info("Step 4: Converting script to audio...")
+            # Step 7: Initialize voice agent based on TTS mode and convert script to audio
+            logger.info(
+                f"Step 4: Converting script to audio using {video_request.tts_mode} TTS..."
+            )
+            self._initialize_voice_agent(video_request.tts_mode)
             audio_data = self.voice_agent.process_scripts_to_audio(
                 script_data, str(self.output_base_dir / str(research_id)), research_id
             )
@@ -394,7 +421,7 @@ class VideoService:
 
             # Get metadata
             slide_count = len(script_data.get("slide_scripts", []))
-            duration_seconds = audio_data.get("duration_seconds", 0)
+            estimated_duration = audio_data.get("estimated_duration", 0)
 
             logger.info(
                 f"✅ Video generation completed successfully for research ID: {research_id}"
@@ -403,7 +430,7 @@ class VideoService:
             return CreateVideoResponse(
                 video_url=f"/video/stream/{research_id}",
                 research_id=research_id,
-                duration_seconds=duration_seconds,
+                duration_seconds=estimated_duration,
                 slide_count=slide_count,
                 status="completed",
                 s3_url=f"s3://{settings.S3_BUCKET}/{object_key}",
