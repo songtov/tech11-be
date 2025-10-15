@@ -32,10 +32,3 @@ app.include_router(tts_router)
 app.include_router(summary_router)
 app.include_router(chatbot_router)
 app.include_router(video_router)
-
-# Mount static files for serving generated videos
-app.mount(
-    "/output",
-    StaticFiles(directory="/Users/chihosong/sk/tech11-be/output"),
-    name="output",
-)
