@@ -48,6 +48,7 @@ def create_video_from_research_id(
     db: Session = Depends(get_db),
 ):
     """Create a video from a research paper. Set force_regenerate=true to regenerate existing videos.
-    Use tts_mode='pro' for high-quality Typecast AI TTS (paid) or 'standard' for gTTS (free)."""
+    Use tts_mode='pro' for high-quality Typecast AI TTS (paid) or 'standard' for gTTS (free).
+    """
     service = VideoService(db)
     return service.create_video_from_research_id(video_request, force_regenerate)
