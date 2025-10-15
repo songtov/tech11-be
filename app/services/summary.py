@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.repositories.research_repository import ResearchRepository
+from app.repositories.summary_repository import SummaryRepository
 from app.schemas.summary import SummaryCreate, SummaryResponse
 
 # Set up logging
@@ -28,6 +29,7 @@ class SummaryService:
     def __init__(self, db: Session):
         self.db = db
         self.research_repository = ResearchRepository(db)
+        self.summary_repository = SummaryRepository(db)
         self.llm = AzureChatOpenAI(
             openai_api_version="2024-02-01",
             azure_deployment=settings.AOAI_DEPLOY_GPT4O,
@@ -148,10 +150,12 @@ class SummaryService:
                 try:
                     pdfmetrics.registerFont(TTFont("Korean", font_path))
                     font_registered = True
-                    logger.info(f"✅ Korean font registered: {font_path}")
+                    logger.info("✅ Korean font registered: {font_path}")
                     break
-                except Exception as e:
-                    logger.warning(f"Failed to register font {font_path}: {e}")
+                except Exception:
+                    logger.warning(
+                        "Failed to register font %s", font_path, exc_info=True
+                    )
                     continue
 
         if not font_registered:
@@ -216,7 +220,9 @@ class SummaryService:
         doc.build(story)
         return temp_path
 
-    def create_summary(self, summary: SummaryCreate) -> SummaryResponse:
+    def create_summary(
+        self, summary: SummaryCreate, research_id: int = None
+    ) -> SummaryResponse:
         """Main summary creation pipeline - fetch PDF from S3 and generate summary"""
         logger.info(f"Creating summary for PDF: {summary.filename}")
 
@@ -229,6 +235,17 @@ class SummaryService:
         # Create summary PDF
         pdf_path = self._make_pdf(summarized_text)
 
+        # Save to database if research_id is provided
+        if research_id:
+            summary_data = {
+                "research_id": research_id,
+                "title": "논문 요약 보고서",
+                "summary": summarized_text,
+                "pdf_link": pdf_path,
+            }
+            saved_summary = self.summary_repository.create(summary_data)
+            logger.info(f"✅ Summary saved to database with ID: {saved_summary.id}")
+
         return SummaryResponse(
             title="논문 요약 보고서",
             summary=summarized_text,
@@ -238,32 +255,85 @@ class SummaryService:
     def create_summary_from_research_id(self, research_id: int) -> SummaryResponse:
         """Create summary from research ID by fetching research from database"""
         try:
-            # 1. Fetch research from database
-            logger.info(f"🔍 Fetching research with ID: {research_id}")
+            # 1. Check if summary already exists for this research_id
+            logger.info(f"🔍 Checking existing summary for research ID: {research_id}")
+            existing_summaries = self.summary_repository.get_by_research_id(research_id)
+
+            if existing_summaries:
+                # Return the most recent summary (cached result)
+                latest_summary = existing_summaries[
+                    0
+                ]  # Already ordered by created_at desc
+                logger.info(
+                    "✅ Found existing summary (ID: {latest_summary.id}), returning cached result"
+                )
+                return SummaryResponse(
+                    title=latest_summary.title,
+                    summary=latest_summary.summary,
+                    pdf_link=latest_summary.pdf_link,
+                )
+
+            # 2. Fetch research from database (only if no summary exists)
+            logger.info("🔍 Fetching research with ID: {research_id}")
             research = self.research_repository.get_by_id(research_id)
 
             if not research:
-                raise ValueError(f"Research with ID {research_id} not found")
+                raise ValueError("Research with ID {research_id} not found")
 
-            # 2. Validate research has object_key (S3 filename)
+            # 3. Validate research has object_key (S3 filename)
             if not research.object_key:
                 raise ValueError(
-                    f"Research with ID {research_id} does not have an associated PDF file (missing object_key)"
+                    "Research with ID {research_id} does not have an associated PDF file (missing object_key)"
                 )
 
-            # 3. Extract filename from object_key
+            # 4. Extract filename from object_key
             # object_key format: "output/research/filename.pdf"
             object_key = research.object_key
             filename = object_key.split("/")[-1] if "/" in object_key else object_key
 
-            logger.info(f"📄 Using filename from research object_key: {filename}")
+            logger.info("📄 Using filename from research object_key: {filename}")
+            logger.info("🚀 Generating new summary (no cache found)")
 
-            # 4. Generate summary using existing method
-            return self.create_summary(SummaryCreate(filename=filename))
+            # 5. Generate summary using existing method and save to database
+            return self.create_summary(
+                SummaryCreate(filename=filename), research_id=research_id
+            )
 
-        except ValueError as e:
-            logger.error(f"❌ Research validation failed: {e}")
-            raise e
-        except Exception as e:
-            logger.error(f"❌ Summary generation from research ID failed: {e}")
-            raise ValueError(f"요약 생성 중 오류가 발생했습니다: {str(e)}")
+        except ValueError:
+            logger.error("❌ Research validation failed", exc_info=True)
+            raise
+        except Exception:
+            logger.error("❌ Summary generation from research ID failed", exc_info=True)
+            raise ValueError("요약 생성 중 오류가 발생했습니다")
+
+    # Summary CRUD operations
+    def get_summary(self, summary_id: int):
+        """Get a summary by ID"""
+        return self.summary_repository.get_by_id(summary_id)
+
+    def get_summaries_by_research_id(self, research_id: int):
+        """Get all summaries for a specific research"""
+        return self.summary_repository.get_by_research_id(research_id)
+
+    def get_all_summaries(self, skip: int = 0, limit: int = 100):
+        """Get all summaries with pagination"""
+        return self.summary_repository.get_all(skip, limit)
+
+    def get_recent_summaries(self, limit: int = 10):
+        """Get recent summaries"""
+        return self.summary_repository.get_recent(limit)
+
+    def update_summary_pdf_link(self, summary_id: int, pdf_link: str):
+        """Update PDF link for a summary"""
+        return self.summary_repository.update_pdf_link(summary_id, pdf_link)
+
+    def delete_summary(self, summary_id: int) -> bool:
+        """Delete a summary"""
+        summary = self.summary_repository.get_by_id(summary_id)
+        if not summary:
+            return False
+        return self.summary_repository.delete(summary)
+
+    def delete_summaries_by_research_id(self, research_id: int) -> int:
+        """Delete all summaries for a specific research"""
+        return self.summary_repository.delete_by_research_id(research_id)
