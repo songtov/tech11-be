@@ -2,7 +2,7 @@ import logging
 import os
 import pickle
 import tempfile
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 
 import boto3
 from botocore.exceptions import ClientError
@@ -10,7 +10,6 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.messages import HumanMessage, AIMessage
 from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
 from sqlalchemy.orm import Session
 
@@ -173,12 +172,13 @@ class ChatbotService:
 
             # List all files in the vector store directory
             response = self.s3_client.list_objects_v2(
-                Bucket=settings.S3_BUCKET,
-                Prefix=s3_base_key
+                Bucket=settings.S3_BUCKET, Prefix=s3_base_key
             )
 
-            if 'Contents' not in response:
-                logger.info(f"No cached vector store found for research_id: {research_id}")
+            if "Contents" not in response:
+                logger.info(
+                    f"No cached vector store found for research_id: {research_id}"
+                )
                 return None
 
             # Create temporary directory to download FAISS index
@@ -187,8 +187,8 @@ class ChatbotService:
                 os.makedirs(index_path, exist_ok=True)
 
                 # Download all FAISS files from S3
-                for obj in response['Contents']:
-                    s3_key = obj['Key']
+                for obj in response["Contents"]:
+                    s3_key = obj["Key"]
                     file_name = os.path.basename(s3_key)
                     file_path = os.path.join(index_path, file_name)
 
@@ -197,12 +197,12 @@ class ChatbotService:
 
                 # Load FAISS index
                 vector_store = FAISS.load_local(
-                    index_path,
-                    self.embeddings,
-                    allow_dangerous_deserialization=True
+                    index_path, self.embeddings, allow_dangerous_deserialization=True
                 )
 
-                logger.info(f"Vector store loaded from S3 cache for research_id: {research_id}")
+                logger.info(
+                    f"Vector store loaded from S3 cache for research_id: {research_id}"
+                )
                 return vector_store
 
         except Exception as e:
@@ -220,11 +220,15 @@ class ChatbotService:
             history = self.conversation_history.get(research_id, [])
 
             if not history:
-                logger.info(f"No conversation history to save for research_id: {research_id}")
+                logger.info(
+                    f"No conversation history to save for research_id: {research_id}"
+                )
                 return
 
             # Create temporary file for history
-            with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.pkl') as tmp:
+            with tempfile.NamedTemporaryFile(
+                mode="wb", delete=False, suffix=".pkl"
+            ) as tmp:
                 pickle.dump(history, tmp)
                 tmp.flush()
 
@@ -235,13 +239,17 @@ class ChatbotService:
                 # Clean up
                 os.unlink(tmp.name)
 
-                logger.info(f"Conversation history saved to S3 for research_id: {research_id} ({len(history)} messages)")
+                logger.info(
+                    f"Conversation history saved to S3 for research_id: {research_id} ({len(history)} messages)"
+                )
 
         except Exception as e:
             logger.warning(f"Failed to save conversation history to S3: {e}")
             # Don't raise - saving history is optional, continue without it
 
-    def _load_conversation_history_from_s3(self, research_id: int) -> List[Dict[str, str]]:
+    def _load_conversation_history_from_s3(
+        self, research_id: int
+    ) -> List[Dict[str, str]]:
         """
         Load conversation history from S3 cache
 
@@ -257,23 +265,29 @@ class ChatbotService:
             except ClientError as e:
                 error_code = e.response.get("Error", {}).get("Code", "")
                 if error_code == "404":
-                    logger.info(f"No cached conversation history found for research_id: {research_id}")
+                    logger.info(
+                        f"No cached conversation history found for research_id: {research_id}"
+                    )
                     return []
                 raise
 
             # Download history from S3
-            with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.pkl') as tmp:
+            with tempfile.NamedTemporaryFile(
+                mode="wb", delete=False, suffix=".pkl"
+            ) as tmp:
                 self.s3_client.download_file(settings.S3_BUCKET, s3_key, tmp.name)
                 tmp.close()
 
                 # Load history
-                with open(tmp.name, 'rb') as f:
+                with open(tmp.name, "rb") as f:
                     history = pickle.load(f)
 
                 # Clean up
                 os.unlink(tmp.name)
 
-                logger.info(f"Conversation history loaded from S3 for research_id: {research_id} ({len(history)} messages)")
+                logger.info(
+                    f"Conversation history loaded from S3 for research_id: {research_id} ({len(history)} messages)"
+                )
                 return history
 
         except Exception as e:
@@ -460,9 +474,7 @@ Context from research paper:
         """Get conversation history for a specific research"""
         return self.conversation_history.get(research_id, [])
 
-    def _add_to_conversation_history(
-        self, research_id: int, role: str, content: str
-    ):
+    def _add_to_conversation_history(self, research_id: int, role: str, content: str):
         """Add a message to conversation history"""
         if research_id not in self.conversation_history:
             self.conversation_history[research_id] = []
@@ -556,7 +568,9 @@ Context from research paper:
                 )
 
             # 3. Try to load vector store from S3 cache
-            logger.info(f"Attempting to load vector store from S3 cache for research_id: {research_id}")
+            logger.info(
+                f"Attempting to load vector store from S3 cache for research_id: {research_id}"
+            )
             vector_store = self._load_vector_store_from_s3(research_id)
 
             # 4. If not cached, create new vector store and save to S3
@@ -590,7 +604,9 @@ Context from research paper:
 
             # 7. Load conversation history from S3 if not in memory
             if research_id not in self.conversation_history:
-                logger.info(f"Loading conversation history from S3 for research_id: {research_id}")
+                logger.info(
+                    f"Loading conversation history from S3 for research_id: {research_id}"
+                )
                 s3_history = self._load_conversation_history_from_s3(research_id)
                 if s3_history:
                     self.conversation_history[research_id] = s3_history
@@ -681,11 +697,15 @@ Context from research paper:
         try:
             s3_key = self._get_conversation_history_s3_key(research_id)
             self.s3_client.delete_object(Bucket=settings.S3_BUCKET, Key=s3_key)
-            logger.warning(f"⚠️ Deleted conversation history from S3 for research_id: {research_id}")
+            logger.warning(
+                f"⚠️ Deleted conversation history from S3 for research_id: {research_id}"
+            )
         except ClientError as e:
             error_code = e.response.get("Error", {}).get("Code", "")
             if error_code == "404":
-                logger.info(f"No conversation history found in S3 for research_id: {research_id}")
+                logger.info(
+                    f"No conversation history found in S3 for research_id: {research_id}"
+                )
             else:
                 logger.warning(f"Failed to delete conversation history from S3: {e}")
 
@@ -739,7 +759,9 @@ Context from research paper:
 
             if "Contents" in response:
                 # Delete all files
-                objects_to_delete = [{"Key": obj["Key"]} for obj in response["Contents"]]
+                objects_to_delete = [
+                    {"Key": obj["Key"]} for obj in response["Contents"]
+                ]
                 self.s3_client.delete_objects(
                     Bucket=settings.S3_BUCKET, Delete={"Objects": objects_to_delete}
                 )
@@ -748,7 +770,9 @@ Context from research paper:
                 )
                 cache_deleted = True
             else:
-                logger.info(f"No cached vector store found in S3 for research_id: {research_id}")
+                logger.info(
+                    f"No cached vector store found in S3 for research_id: {research_id}"
+                )
                 cache_deleted = False
 
             # 3. Clear conversation history
@@ -761,7 +785,7 @@ Context from research paper:
 
             return {
                 "status": "success",
-                "message": f"캐시가 삭제되었습니다. 다음 대화 시 벡터 스토어가 재생성됩니다.",
+                "message": "캐시가 삭제되었습니다. 다음 대화 시 벡터 스토어가 재생성됩니다.",
                 "cache_deleted": cache_deleted,
                 "history_cleared": history_result["status"] == "success",
             }
@@ -772,4 +796,3 @@ Context from research paper:
         except Exception as e:
             logger.error(f"Failed to refresh vector store cache: {e}")
             raise Exception(f"캐시 삭제 중 오류가 발생했습니다: {str(e)}")
-

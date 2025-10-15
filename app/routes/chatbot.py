@@ -3,9 +3,9 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.schemas.chatbot import (
+    CacheRefreshResponse,
     ChatbotRequest,
     ChatbotResponse,
-    CacheRefreshResponse,
 )
 from app.services.chatbot import ChatbotService
 
@@ -52,9 +52,7 @@ def create_chatbot_from_research_id(research_id: int, db: Session = Depends(get_
     status_code=status.HTTP_200_OK,
 )
 def chat_with_research(
-    research_id: int,
-    request: ChatbotRequest,
-    db: Session = Depends(get_db)
+    research_id: int, request: ChatbotRequest, db: Session = Depends(get_db)
 ):
     """
     Chat with a research paper using RAG (Retrieval Augmented Generation) with caching
@@ -84,7 +82,7 @@ def chat_with_research(
         if not request.question or request.question.strip() == "":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Question cannot be empty"
+                detail="Question cannot be empty",
             )
 
         service = ChatbotService(db)
