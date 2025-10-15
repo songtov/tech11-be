@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     AWS_ACCESS_KEY: str = ""
     AWS_SECRET_KEY: str = ""
 
+    # Temporary directories
+    TEMP_DIR: str = "/tmp"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

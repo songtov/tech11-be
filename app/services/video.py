@@ -38,8 +38,9 @@ class VideoService:
         # Initialize agents
         self._initialize_agents()
 
-        # Set up output directory
-        self.output_base_dir = Path("/Users/chihosong/sk/tech11-be/output/videos")
+        # Set up temporary output directory
+        self.temp_dir = Path(settings.TEMP_DIR)
+        self.output_base_dir = self.temp_dir / "tech11_videos"
         self.output_base_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize S3 client

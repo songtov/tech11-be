@@ -53,7 +53,9 @@ def clean_text(text: str) -> str:
 class TTSService:
     def __init__(self, db: Session = None):
         self.db = db
-        self.output_dir = Path("output/tts")
+
+        self.temp_dir = Path(settings.TEMP_DIR)
+        self.output_dir = self.temp_dir / "tech11_tts"
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.legacy_papers_dir = Path("legacy/downloaded_papers")
 
