@@ -171,20 +171,6 @@ class VoiceAgent:
 
         return audio_files
 
-    def get_audio_duration(self, audio_path: str) -> float:
-        """Get duration of audio file in seconds"""
-        try:
-            import librosa
-
-            duration = librosa.get_duration(filename=audio_path)
-            return duration
-        except ImportError:
-            logger.warning("librosa not available, cannot get audio duration")
-            return 0.0
-        except Exception as e:
-            logger.error(f"Error getting audio duration: {e}")
-            return 0.0
-
     def process_scripts_to_audio(
         self, script_data: Dict, output_dir: str, research_id: int
     ) -> Dict:
@@ -207,13 +193,9 @@ class VoiceAgent:
             slide_scripts, str(output_path)
         )
 
-        # Get audio duration
-        duration = self.get_audio_duration(full_audio_path)
-
         return {
             "full_audio_path": full_audio_path,
             "slide_audio_files": slide_audio_files,
-            "duration_seconds": duration,
             "estimated_duration": script_data["total_duration_estimate"],
             "word_count": script_data["total_word_count"],
         }

@@ -405,7 +405,7 @@ class VideoService:
 
             # Get metadata
             slide_count = len(script_data.get("slide_scripts", []))
-            duration_seconds = audio_data.get("duration_seconds", 0)
+            estimated_duration = audio_data.get("estimated_duration", 0)
 
             logger.info(
                 f"✅ Video generation completed successfully for research ID: {research_id}"
@@ -414,7 +414,7 @@ class VideoService:
             return CreateVideoResponse(
                 video_url=f"/video/stream/{research_id}",
                 research_id=research_id,
-                duration_seconds=duration_seconds,
+                duration_seconds=estimated_duration,
                 slide_count=slide_count,
                 status="completed",
                 s3_url=f"s3://{settings.S3_BUCKET}/{object_key}",
