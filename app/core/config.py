@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     AOAI_DEPLOY_EMBED_3_SMALL: str = "text-embedding-3-small"
     AOAI_DEPLOY_EMBED_ADA: str = "text-embedding-ada-002"
 
+    # TTS config
+    TTS_ENDPOINT: str = "https://api.typecast.ai/v1/text-to-speech"
+    TTS_API_KEY: str = ""
+    TTS_VOICE_ID: str = ""
+
     # S3 Bucket
     S3_BUCKET: str = ""
     AWS_ACCESS_KEY: str = ""
