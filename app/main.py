@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from app.routes.chatbot import router as chatbot_router
 from app.routes.quiz import router as quiz_router
