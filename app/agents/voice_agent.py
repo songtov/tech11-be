@@ -4,7 +4,7 @@ Voice Agent - Converts narration scripts to audio using Text-to-Speech
 
 import logging
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Literal
 
 import requests
 
@@ -12,13 +12,15 @@ logger = logging.getLogger(__name__)
 
 
 class VoiceAgent:
-    """Agent responsible for converting text to speech using Typecast AI API"""
+    """Agent responsible for converting text to speech using gTTS or Typecast AI API"""
 
     def __init__(
         self,
-        endpoint: str,
-        api_key: str,
-        voice_id: str,
+        tts_mode: Literal["standard", "pro"] = "standard",
+        # Typecast AI parameters (only used when tts_mode="pro")
+        endpoint: str = "",
+        api_key: str = "",
+        voice_id: str = "",
         model: str = "ssfm-v21",
         language: str = "kor",
         emotion_preset: str = "normal",
@@ -27,19 +29,32 @@ class VoiceAgent:
         audio_pitch: int = 0,
         audio_tempo: int = 1,
     ):
-        self.endpoint = endpoint
-        self.api_key = api_key
-        self.voice_id = voice_id
-        self.model = model
-        self.language = language
-        self.emotion_preset = emotion_preset
-        self.emotion_intensity = emotion_intensity
-        self.volume = volume
-        self.audio_pitch = audio_pitch
-        self.audio_tempo = audio_tempo
+        self.tts_mode = tts_mode
+
+        if tts_mode == "pro":
+            # Typecast AI configuration
+            self.endpoint = endpoint
+            self.api_key = api_key
+            self.voice_id = voice_id
+            self.model = model
+            self.language = language
+            self.emotion_preset = emotion_preset
+            self.emotion_intensity = emotion_intensity
+            self.volume = volume
+            self.audio_pitch = audio_pitch
+            self.audio_tempo = audio_tempo
+
+            # Validate Typecast configuration
+            if not all([endpoint, api_key, voice_id]):
+                raise ValueError(
+                    "Typecast AI configuration incomplete. Please set TTS_ENDPOINT, TTS_API_KEY, and TTS_VOICE_ID."
+                )
+        else:
+            # gTTS configuration (standard mode)
+            self.language = "ko"  # gTTS uses "ko" for Korean
 
     def text_to_speech(self, text: str, output_path: str) -> str:
-        """Convert text to speech using Typecast AI API and save as MP3"""
+        """Convert text to speech and save as MP3"""
         try:
             # Clean text for TTS
             cleaned_text = self._clean_text_for_tts(text)
@@ -51,54 +66,78 @@ class VoiceAgent:
                     "이 슬라이드는 연구 논문의 중요한 정보를 포함하고 있습니다."
                 )
 
-            # Prepare API request payload
-            payload = {
-                "voice_id": self.voice_id,
-                "text": cleaned_text,
-                "model": self.model,
-                "language": self.language,
-                "prompt": {
-                    "emotion_preset": self.emotion_preset,
-                    "emotion_intensity": self.emotion_intensity,
-                },
-                "output": {
-                    "volume": self.volume,
-                    "audio_pitch": self.audio_pitch,
-                    "audio_tempo": self.audio_tempo,
-                    "audio_format": "mp3",
-                },
-            }
-
-            headers = {
-                "X-API-KEY": self.api_key,
-                "Content-Type": "application/json",
-            }
-
-            # Make API request
-            logger.info(
-                f"Calling Typecast AI TTS API for text length: {len(cleaned_text)}"
-            )
-            response = requests.post(self.endpoint, json=payload, headers=headers)
-
-            # Check response status
-            if response.status_code != 200:
-                logger.error(
-                    f"Typecast API error: {response.status_code} - {response.text}"
-                )
-                raise ValueError(
-                    f"Typecast API returned status {response.status_code}: {response.text}"
-                )
-
-            # Save audio content to file
-            with open(output_path, "wb") as f:
-                f.write(response.content)
-
-            logger.info(f"Generated TTS audio: {output_path}")
-            return output_path
+            if self.tts_mode == "pro":
+                return self._text_to_speech_typecast(cleaned_text, output_path)
+            else:
+                return self._text_to_speech_gtts(cleaned_text, output_path)
 
         except Exception as e:
             logger.error(f"Error generating TTS audio: {e}")
             raise
+
+    def _text_to_speech_typecast(self, text: str, output_path: str) -> str:
+        """Convert text to speech using Typecast AI API"""
+        # Prepare API request payload
+        payload = {
+            "voice_id": self.voice_id,
+            "text": text,
+            "model": self.model,
+            "language": self.language,
+            "prompt": {
+                "emotion_preset": self.emotion_preset,
+                "emotion_intensity": self.emotion_intensity,
+            },
+            "output": {
+                "volume": self.volume,
+                "audio_pitch": self.audio_pitch,
+                "audio_tempo": self.audio_tempo,
+                "audio_format": "mp3",
+            },
+        }
+
+        headers = {
+            "X-API-KEY": self.api_key,
+            "Content-Type": "application/json",
+        }
+
+        # Make API request
+        logger.info(f"Calling Typecast AI TTS API for text length: {len(text)}")
+        response = requests.post(self.endpoint, json=payload, headers=headers)
+
+        # Check response status
+        if response.status_code != 200:
+            logger.error(
+                f"Typecast API error: {response.status_code} - {response.text}"
+            )
+            raise ValueError(
+                f"Typecast API returned status {response.status_code}: {response.text}"
+            )
+
+        # Save audio content to file
+        with open(output_path, "wb") as f:
+            f.write(response.content)
+
+        logger.info(f"Generated Typecast AI TTS audio: {output_path}")
+        return output_path
+
+    def _text_to_speech_gtts(self, text: str, output_path: str) -> str:
+        """Convert text to speech using gTTS (free)"""
+        try:
+            from gtts import gTTS
+
+            # Create TTS object
+            tts = gTTS(text=text, lang=self.language, slow=False)
+
+            # Save to file
+            tts.save(output_path)
+            logger.info(f"Generated gTTS audio: {output_path}")
+            return output_path
+
+        except ImportError:
+            logger.error("gTTS not available. Please install: pip install gtts")
+            raise ValueError(
+                "gTTS library not installed. Please install with: pip install gtts"
+            )
 
     def _clean_text_for_tts(self, text: str) -> str:
         """Clean text for better TTS output"""

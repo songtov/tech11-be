@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Literal
 
 from pydantic import BaseModel, Field
 
@@ -6,6 +6,10 @@ from pydantic import BaseModel, Field
 class CreateVideoRequest(BaseModel):
     research_id: int = Field(
         ..., description="ID of the research entry to create a video for", gt=0
+    )
+    tts_mode: Literal["standard", "pro"] = Field(
+        default="standard",
+        description="TTS mode: 'standard' uses gTTS (free), 'pro' uses Typecast AI (paid)",
     )
 
 
