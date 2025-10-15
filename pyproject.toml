@@ -15,7 +15,7 @@ dependencies = [
     "langchain-openai>=0.3.34",
     "langchain-text-splitters>=0.3.11",
     "langgraph>=0.6.10",
-    "moviepy>=2.2.1",
+    "moviepy==1.0.3",
     "pydantic>=2.11.9",
     "pydantic-settings>=2.11.0",
     "pymupdf>=1.26.4",
