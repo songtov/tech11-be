@@ -24,8 +24,10 @@ WORKDIR /app
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies using uv with aggressive cleanup
+# Install dependencies using uv with CPU-only PyTorch and aggressive cleanup
 RUN uv sync --frozen --no-dev \
+    && uv pip uninstall torch -y \
+    && uv pip install torch==2.2.2+cpu --index-url https://download.pytorch.org/whl/cpu \
     && rm -rf /root/.cache \
     && apt-get autoremove -y \
     && apt-get clean \
