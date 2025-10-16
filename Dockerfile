@@ -11,12 +11,9 @@ ENV PYTHONUNBUFFERED=1 \
 RUN apt-get update && apt-get install -y \
     curl \
     fonts-noto-cjk \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install ffmpeg
-RUN apt-get update && apt-get install -y \
     ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -27,8 +24,18 @@ WORKDIR /app
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies using uv
-RUN uv sync --frozen --no-dev
+# Install dependencies using uv with CPU-only PyTorch and aggressive cleanup
+RUN uv sync --frozen --no-dev \
+    && uv pip uninstall torch -y \
+    && uv pip install torch==2.2.2+cpu --index-url https://download.pytorch.org/whl/cpu \
+    && rm -rf /root/.cache \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /tmp/* \
+    && rm -rf /var/tmp/* \
+    && find /usr -name "*.pyc" -delete \
+    && find /usr -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
 
 # Copy application code
 COPY . .

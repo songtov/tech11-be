@@ -31,10 +31,12 @@ jobs:
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
             set -e
             cd ${{ secrets.PROJECT_PATH }}
+            echo "Cleaning up disk space before build..."
+            docker system prune -af --volumes || true
             echo "Pulling latest images (if any)..."
             docker compose pull || true
             echo "Rebuilding and restarting containers..."
-            docker compose up -d --build
-            echo "Cleaning unused resources..."
-            docker system prune -af
+            docker compose up -d --build --remove-orphans
+            echo "Cleaning unused resources after build..."
+            docker system prune -af --volumes
           EOF
