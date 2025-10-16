@@ -12,7 +12,6 @@ import requests
 from botocore.exceptions import ClientError
 from langchain_openai import AzureChatOpenAI
 from sqlalchemy.orm import Session
-from googletrans import Translator
 
 from app.core.config import settings
 from app.domain.research_domain import PaperData, ResearchDomain
@@ -1059,26 +1058,26 @@ class ResearchService:
         logger.info(f"Starting keyword search for: {keyword}")
 
         try:
-            # Translate Korean keywords to English
-            translated_keyword = self._translate_keyword_to_english(keyword)
-            logger.info(f"Translated keyword: {keyword} -> {translated_keyword}")
-            
             papers = []
-            
+
             # Strategy 1: Try multiple direct search approaches
             search_strategies = [
-                translated_keyword,  # Basic keyword search
-                f"ti:{translated_keyword}",  # Title search
-                f"abs:{translated_keyword}",  # Abstract search
-                f"all:{translated_keyword}",  # All fields search
+                keyword,  # Basic keyword search
+                f"ti:{keyword}",  # Title search
+                f"abs:{keyword}",  # Abstract search
+                f"all:{keyword}",  # All fields search
             ]
-            
+
             for i, search_query in enumerate(search_strategies):
                 logger.info(f"Trying search strategy {i+1}: {search_query}")
                 try:
-                    strategy_papers = self._search_arxiv_with_query(search_query, max_results=5)
+                    strategy_papers = self._search_arxiv_with_query(
+                        search_query, max_results=5
+                    )
                     if strategy_papers:
-                        logger.info(f"Strategy {i+1} found {len(strategy_papers)} papers")
+                        logger.info(
+                            f"Strategy {i+1} found {len(strategy_papers)} papers"
+                        )
                         papers.extend(strategy_papers)
                         if len(papers) >= 5:
                             break
@@ -1087,12 +1086,12 @@ class ResearchService:
                 except Exception as e:
                     logger.error(f"Strategy {i+1} failed: {e}")
                     continue
-            
+
             # Strategy 2: Try MCP approach if direct search failed
             if not papers:
                 logger.info("Direct search failed, trying MCP approach")
                 try:
-                    mcp_papers = self._search_papers_with_mcp(translated_keyword)
+                    mcp_papers = self._search_papers_with_mcp(keyword)
                     if mcp_papers:
                         papers.extend(mcp_papers)
                         logger.info(f"MCP approach found {len(mcp_papers)} papers")
@@ -1109,7 +1108,41 @@ class ResearchService:
             unique_papers = self._remove_duplicate_papers(papers)
             logger.info(f"After removing duplicates: {len(unique_papers)} papers")
 
-            # Convert to response format (limit to 5)
+            # Save to database (if papers found)
+            if unique_papers:
+                try:
+                    logger.info(
+                        f"Saving {len(unique_papers[:5])} papers to database for keyword: {keyword}"
+                    )
+                    paper_data_list = []
+                    for paper in unique_papers[:5]:
+                        paper_data = PaperData(
+                            title=paper.title,
+                            abstract=paper.abstract or "No abstract available",
+                            domain=f"keyword_search_{keyword}",  # Use keyword as domain
+                            authors=paper.authors,
+                            published_date=paper.published_date,
+                            updated_date=paper.updated_date,
+                            categories=paper.categories,
+                            pdf_url=paper.pdf_url,
+                            arxiv_url=paper.arxiv_url,
+                            citation_count=paper.citation_count,
+                            relevance_score=paper.relevance_score,
+                        )
+                        paper_data_list.append(
+                            self.domain_logic.paper_to_dict(paper_data)
+                        )
+
+                    # Bulk insert into database
+                    saved_papers = self.repository.create_bulk(paper_data_list)
+                    logger.info(
+                        f"Successfully saved {len(saved_papers)} papers to database for keyword: {keyword}"
+                    )
+                except Exception as e:
+                    logger.error(f"Error saving papers to database: {e}")
+                    # Continue with normal flow even if DB save fails
+
+            # Convert to response format (limit to 5) - unchanged logic
             research_responses = self._convert_papers_to_responses(unique_papers[:5])
 
             logger.info(
@@ -1140,7 +1173,9 @@ class ResearchService:
             logger.info("Step 2: Searching arXiv with generated queries")
             all_papers = []
             for i, query in enumerate(search_queries):
-                logger.info(f"Searching with query {i+1}/{len(search_queries)}: {query}")
+                logger.info(
+                    f"Searching with query {i+1}/{len(search_queries)}: {query}"
+                )
                 papers = self._search_arxiv_with_query(query)
                 logger.info(f"Query {i+1} returned {len(papers)} papers")
                 all_papers.extend(papers)
@@ -1151,7 +1186,7 @@ class ResearchService:
             logger.info("Step 3: Removing duplicates and ranking by relevance")
             unique_papers = self._remove_duplicate_papers(all_papers)
             logger.info(f"After removing duplicates: {len(unique_papers)} papers")
-            
+
             ranked_papers = self._rank_papers_by_relevance(unique_papers, keyword)
             logger.info(f"After ranking: {len(ranked_papers)} papers")
 
@@ -1216,7 +1251,7 @@ class ResearchService:
                     query = query.replace("관련 기술:", "").strip()
                     query = query.replace("구체적인 용어:", "").strip()
                     query = query.replace("저자/기관:", "").strip()
-                    
+
                     if query and len(query) > 1:
                         queries.append(query)
 
@@ -1242,7 +1277,7 @@ class ResearchService:
         try:
             # Use the correct arXiv API endpoint
             base_url = "http://export.arxiv.org/api/query"
-            
+
             params = {
                 "search_query": query,
                 "start": 0,
@@ -1255,12 +1290,10 @@ class ResearchService:
             logger.info(f"Request params: {params}")
             logger.info(f"Request URL: {base_url}")
 
-            response = requests.get(
-                base_url, params=params, timeout=30
-            )
+            response = requests.get(base_url, params=params, timeout=30)
             logger.info(f"arXiv API response status: {response.status_code}")
             logger.info(f"Response content length: {len(response.content)}")
-            
+
             response.raise_for_status()
 
             # Parse XML response
@@ -1370,76 +1403,6 @@ class ResearchService:
             responses.append(response)
 
         return responses
-
-    def _translate_keyword_to_english(self, keyword: str) -> str:
-        """Translate Korean keywords to English using Google Translate API"""
-        try:
-            # Check if the keyword contains Korean characters
-            has_korean = any('\uac00' <= char <= '\ud7af' for char in keyword)
-            
-            if not has_korean:
-                logger.info(f"Keyword '{keyword}' appears to be already in English")
-                return keyword
-            
-            logger.info(f"Translating Korean keyword using Google Translate: {keyword}")
-            
-            # Use Google Translate API
-            translator = Translator()
-            result = translator.translate(keyword, src='ko', dest='en')
-            translated = result.text.strip()
-            
-            logger.info(f"Google Translate result: '{keyword}' -> '{translated}'")
-            
-            # Clean up the translation result
-            translated = translated.replace('"', '').replace("'", "").strip()
-            
-            # Validate translation result
-            if not translated or translated == keyword or len(translated) < 2:
-                logger.warning(f"Google Translate failed for '{keyword}', trying fallback")
-                translated = self._get_fallback_translation(keyword)
-            
-            return translated
-            
-        except Exception as e:
-            logger.error(f"Error in Google Translate for '{keyword}': {e}")
-            # Use fallback translation
-            return self._get_fallback_translation(keyword)
-
-    def _get_fallback_translation(self, keyword: str) -> str:
-        """Minimal fallback translation for essential terms only"""
-        # Only keep essential terms that are commonly used and might cause issues with LLM translation
-        fallback_dict = {
-            # Basic technology terms that are very common
-            "AI": "AI",
-            "ML": "ML",
-            "CPU": "CPU", 
-            "GPU": "GPU",
-            "IoT": "IoT",
-            "VR": "VR",
-            "AR": "AR",
-            "MR": "MR",
-            "VLSI": "VLSI",
-            "FPGA": "FPGA",
-            
-            # Very basic Korean terms that might be mistranslated
-            "웹": "web",
-            "앱": "app",
-            "네트워크": "network",
-            "시스템": "system",
-            "소프트웨어": "software",
-            "하드웨어": "hardware",
-        }
-        
-        # Try exact match first
-        if keyword in fallback_dict:
-            logger.info(f"Fallback exact match: '{keyword}' -> '{fallback_dict[keyword]}'")
-            return fallback_dict[keyword]
-        
-        # For any other terms, return the original keyword
-        # This allows the search to proceed with the original Korean term
-        # which might still work in some cases
-        logger.info(f"No fallback translation available for '{keyword}', returning original")
-        return keyword
 
     def _create_dummy_response_for_keyword(
         self, keyword: str, message: str
