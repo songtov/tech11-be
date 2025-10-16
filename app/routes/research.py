@@ -7,6 +7,7 @@ from app.schemas.research import (
     ResearchDownloadResponse,
     ResearchResponse,
     ResearchSearch,
+    ResearchSearchByKeyword,
     ResearchSearchResponse,
 )
 from app.services.research import ResearchService
@@ -20,9 +21,39 @@ router = APIRouter(tags=["research"])
     status_code=status.HTTP_200_OK,
 )
 def search_research(research: ResearchSearch, db: Session = Depends(get_db)):
-    """Search for research entries"""
+    """Search for research entries by domain"""
     service = ResearchService(db)
     return service.search_research(research)
+
+
+@router.post(
+    "/research/search/keyword",
+    response_model=ResearchSearchResponse,
+    status_code=status.HTTP_200_OK,
+)
+def search_research_by_keyword(
+    research: ResearchSearchByKeyword, db: Session = Depends(get_db)
+):
+    """
+    Search for research papers using keyword with MCP (Model Context Protocol)
+
+    This endpoint allows you to search for research papers by providing a keyword.
+    The system uses MCP to generate intelligent search queries and find relevant papers from arXiv.
+
+    Args:
+        research: ResearchSearchByKeyword containing the search keyword
+
+    Returns:
+        ResearchSearchResponse with exactly 5 research papers related to the keyword
+
+    Example:
+        POST /research/search/keyword
+        {
+            "keyword": "machine learning"
+        }
+    """
+    service = ResearchService(db)
+    return service.search_research_by_keyword(research.keyword)
 
 
 @router.post(
