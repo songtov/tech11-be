@@ -10,11 +10,22 @@ try:
     from moviepy.editor import (  # type: ignore
         AudioFileClip,
         ImageClip,
+        VideoFileClip,
         concatenate_videoclips,
     )
 except ImportError:
     # Fallback for moviepy 2.x
-    from moviepy import AudioFileClip, concatenate_videoclips, ImageClip  # type: ignore
+    from moviepy import (  # type: ignore
+        AudioFileClip,
+        ImageClip,
+        VideoFileClip,
+        concatenate_videoclips,
+    )
+
+try:
+    from pytoon.animator import animate
+except ImportError:
+    animate = None
 
 import os
 import tempfile
@@ -244,7 +255,7 @@ class VideoAgent:
                 if os.path.exists(image_path):
                     # Create image clip
                     clip = ImageClip(image_path, duration=durations[i])
-                    clip = clip.resized(self.resolution)
+                    clip = clip.resize(self.resolution)
                     clips.append(clip)
                 else:
                     logger.warning(f"Image not found: {image_path}")
@@ -263,11 +274,11 @@ class VideoAgent:
         """Assemble final video from clips and audio"""
         try:
             # Concatenate video clips
-            final_video = concatenate_videoclips(video_clips, method="compose")
+            final_video = concatenate_videoclips(video_clips)
 
             # Add audio
             audio_clip = AudioFileClip(audio_path)
-            final_video = final_video.with_audio(audio_clip)
+            final_video = final_video.set_audio(audio_clip)
 
             # Write video file
             final_video.write_videofile(
@@ -326,15 +337,23 @@ class VideoAgent:
         research_id: int,
         generated_figures: List[Optional[str]] = None,
     ) -> str:
-        """Main method to process slides and audio into final professional video"""
-        logger.info(f"Creating final professional video for research ID: {research_id}")
+        """Main method to process slides and audio into final professional video with animation overlay"""
+        logger.info(
+            f"Creating final professional video with animation for research ID: {research_id}"
+        )
 
-        # Create output path
-        output_path = Path(output_dir) / f"video_{research_id}.mp4"
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        # Create output paths
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
 
-        # Get audio path
+        # Base video path (without animation)
+        base_video_path = output_path / f"base_video_{research_id}.mp4"
+        # Final video path (with animation overlay)
+        final_video_path = output_path / f"video_{research_id}.mp4"
+
+        # Get audio and transcript paths
         audio_path = audio_data["full_audio_path"]
+        transcript_path = audio_data.get("transcript_path")
 
         # Calculate slide durations based on audio segments
         slide_durations = []
@@ -349,13 +368,95 @@ class VideoAgent:
                     logger.warning(f"Could not get duration for {audio_file}: {e}")
                     slide_durations.append(5.0)  # Default duration
 
-        # Create video with generated figures
-        video_path = self.create_video_from_slides_and_audio(
+        # Step 1: Create base slide video (existing functionality)
+        logger.info("Step 1: Creating base slide video...")
+        base_video_path_str = self.create_video_from_slides_and_audio(
             slides_path,
             audio_path,
-            str(output_path),
+            str(base_video_path),
             slide_durations,
             generated_figures,
         )
 
-        return video_path
+        # Step 2: Add PyToon animation overlay if transcript is available
+        if transcript_path and Path(transcript_path).exists():
+            logger.info("Step 2: Adding PyToon animation overlay...")
+            final_video_path_str = self._add_animation_overlay(
+                str(base_video_path), audio_path, transcript_path, str(final_video_path)
+            )
+        else:
+            logger.warning(
+                "Transcript not available, using base video without animation"
+            )
+            # Copy base video to final path if no animation
+            import shutil
+
+            shutil.copy2(base_video_path_str, str(final_video_path))
+            final_video_path_str = str(final_video_path)
+
+        # Clean up temporary base video file
+        try:
+            if (
+                base_video_path.exists()
+                and str(base_video_path) != final_video_path_str
+            ):
+                base_video_path.unlink()
+                logger.info("Cleaned up temporary base video file")
+        except Exception as e:
+            logger.warning(f"Could not clean up base video file: {e}")
+
+        return final_video_path_str
+
+    def _add_animation_overlay(
+        self,
+        base_video_path: str,
+        audio_path: str,
+        transcript_path: str,
+        output_path: str,
+    ) -> str:
+        """Add PyToon animated character overlay to the base slide video"""
+        try:
+            if animate is None:
+                logger.warning(
+                    "PyToon not available, copying base video without animation"
+                )
+                import shutil
+
+                shutil.copy2(base_video_path, output_path)
+                return output_path
+
+            logger.info("Creating PyToon animation overlay...")
+
+            # Read transcript content
+            with open(transcript_path, "r", encoding="utf-8") as file:
+                transcript = file.read()
+
+            # Create PyToon animation
+            logger.info("Generating animated character with lip-sync...")
+            animation = animate(
+                audio_file=audio_path,
+                transcript=transcript,
+            )
+
+            # Load base video as background
+            background_video = VideoFileClip(base_video_path)
+
+            # Export animation with base video as background, positioned bottom-down
+            logger.info("Overlaying animation on base video...")
+            animation.export(path=output_path, background=background_video, scale=0.7)
+
+            # Clean up
+            background_video.close()
+
+            logger.info(
+                f"Successfully created video with animated character: {output_path}"
+            )
+            return output_path
+
+        except Exception as e:
+            logger.error(f"Error adding animation overlay: {e}")
+            logger.warning("Falling back to base video without animation")
+            import shutil
+
+            shutil.copy2(base_video_path, output_path)
+            return output_path
