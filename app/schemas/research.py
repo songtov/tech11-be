@@ -23,6 +23,10 @@ class ResearchSearch(BaseModel):
     domain: DomainEnum
 
 
+class ResearchSearchByKeyword(BaseModel):
+    keyword: str = Field(..., description="검색할 키워드", min_length=1, max_length=200)
+
+
 class ResearchCreate(ResearchBase):
     pass
 

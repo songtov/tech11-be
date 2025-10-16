@@ -1051,6 +1051,385 @@ class ResearchService:
         self.db.refresh(db_research)
         return db_research
 
+    def search_research_by_keyword(self, keyword: str) -> ResearchSearchResponse:
+        """
+        Search for research papers using keyword search with multiple fallback strategies
+        """
+        logger.info(f"Starting keyword search for: {keyword}")
+
+        try:
+            papers = []
+
+            # Strategy 1: Try multiple direct search approaches
+            search_strategies = [
+                keyword,  # Basic keyword search
+                f"ti:{keyword}",  # Title search
+                f"abs:{keyword}",  # Abstract search
+                f"all:{keyword}",  # All fields search
+            ]
+
+            for i, search_query in enumerate(search_strategies):
+                logger.info(f"Trying search strategy {i+1}: {search_query}")
+                try:
+                    strategy_papers = self._search_arxiv_with_query(
+                        search_query, max_results=5
+                    )
+                    if strategy_papers:
+                        logger.info(
+                            f"Strategy {i+1} found {len(strategy_papers)} papers"
+                        )
+                        papers.extend(strategy_papers)
+                        if len(papers) >= 5:
+                            break
+                    else:
+                        logger.info(f"Strategy {i+1} found no papers")
+                except Exception as e:
+                    logger.error(f"Strategy {i+1} failed: {e}")
+                    continue
+
+            # Strategy 2: Try MCP approach if direct search failed
+            if not papers:
+                logger.info("Direct search failed, trying MCP approach")
+                try:
+                    mcp_papers = self._search_papers_with_mcp(keyword)
+                    if mcp_papers:
+                        papers.extend(mcp_papers)
+                        logger.info(f"MCP approach found {len(mcp_papers)} papers")
+                except Exception as e:
+                    logger.error(f"MCP approach failed: {e}")
+
+            # If no papers found, return empty result
+            if not papers:
+                logger.warning(f"All search methods failed for keyword: {keyword}")
+                # Return empty response
+                return ResearchSearchResponse(data=[])
+
+            # Remove duplicates
+            unique_papers = self._remove_duplicate_papers(papers)
+            logger.info(f"After removing duplicates: {len(unique_papers)} papers")
+
+            # Save to database (if papers found)
+            if unique_papers:
+                try:
+                    logger.info(
+                        f"Saving {len(unique_papers[:5])} papers to database for keyword: {keyword}"
+                    )
+                    paper_data_list = []
+                    for paper in unique_papers[:5]:
+                        paper_data = PaperData(
+                            title=paper.title,
+                            abstract=paper.abstract or "No abstract available",
+                            domain=f"keyword_search_{keyword}",  # Use keyword as domain
+                            authors=paper.authors,
+                            published_date=paper.published_date,
+                            updated_date=paper.updated_date,
+                            categories=paper.categories,
+                            pdf_url=paper.pdf_url,
+                            arxiv_url=paper.arxiv_url,
+                            citation_count=paper.citation_count,
+                            relevance_score=paper.relevance_score,
+                        )
+                        paper_data_list.append(
+                            self.domain_logic.paper_to_dict(paper_data)
+                        )
+
+                    # Bulk insert into database
+                    saved_papers = self.repository.create_bulk(paper_data_list)
+                    logger.info(
+                        f"Successfully saved {len(saved_papers)} papers to database for keyword: {keyword}"
+                    )
+                except Exception as e:
+                    logger.error(f"Error saving papers to database: {e}")
+                    # Continue with normal flow even if DB save fails
+
+            # Convert to response format (limit to 5) - unchanged logic
+            research_responses = self._convert_papers_to_responses(unique_papers[:5])
+
+            logger.info(
+                f"Successfully found {len(research_responses)} research papers for keyword: {keyword}"
+            )
+            return ResearchSearchResponse(data=research_responses)
+
+        except Exception as e:
+            logger.error(f"Error in keyword search: {e}")
+            # Return error response with 5 dummy entries
+            error_responses = self._create_dummy_response_for_keyword(
+                keyword,
+                f"An error occurred while searching for research papers: {str(e)}. Please try again later.",
+            )
+            return ResearchSearchResponse(data=error_responses)
+
+    def _search_papers_with_mcp(self, keyword: str) -> List[Paper]:
+        """Search for papers using MCP (Model Context Protocol) approach"""
+        logger.info(f"Using MCP to search for papers with keyword: {keyword}")
+
+        try:
+            # Step 1: Use LLM to generate search queries based on the keyword
+            logger.info("Step 1: Generating search queries with LLM")
+            search_queries = self._generate_search_queries_with_llm(keyword)
+            logger.info(f"Generated {len(search_queries)} search queries")
+
+            # Step 2: Search arXiv using the generated queries
+            logger.info("Step 2: Searching arXiv with generated queries")
+            all_papers = []
+            for i, query in enumerate(search_queries):
+                logger.info(
+                    f"Searching with query {i+1}/{len(search_queries)}: {query}"
+                )
+                papers = self._search_arxiv_with_query(query)
+                logger.info(f"Query {i+1} returned {len(papers)} papers")
+                all_papers.extend(papers)
+
+            logger.info(f"Total papers found from all queries: {len(all_papers)}")
+
+            # Step 3: Remove duplicates and rank by relevance
+            logger.info("Step 3: Removing duplicates and ranking by relevance")
+            unique_papers = self._remove_duplicate_papers(all_papers)
+            logger.info(f"After removing duplicates: {len(unique_papers)} papers")
+
+            ranked_papers = self._rank_papers_by_relevance(unique_papers, keyword)
+            logger.info(f"After ranking: {len(ranked_papers)} papers")
+
+            final_papers = ranked_papers[:5]  # Return top 5 papers
+            logger.info(f"Returning top {len(final_papers)} papers")
+            return final_papers
+
+        except Exception as e:
+            logger.error(f"Error in MCP search: {e}")
+            return []
+
+    def _generate_search_queries_with_llm(self, keyword: str) -> List[str]:
+        """Use LLM to generate multiple search queries for the given keyword"""
+        try:
+            prompt = f"""
+다음 키워드에 대해 arXiv에서 논문을 검색하기 위한 다양한 검색 쿼리를 생성해주세요: "{keyword}"
+
+다음과 같은 형태로 다양한 검색 쿼리를 생성해주세요:
+1. 기본 키워드 검색
+2. 관련 기술/분야 검색
+3. 구체적인 용어 검색
+4. 저자/기관 검색
+
+각 쿼리는 arXiv API에서 사용할 수 있는 형태여야 합니다. 예를 들어:
+- "machine learning"
+- "ti:machine learning"
+- "abs:deep learning"
+- "cat:cs.AI"
+
+총 3-5개의 검색 쿼리를 줄바꿈으로 구분하여 제공해주세요.
+"""
+
+            logger.info(f"Generating search queries for keyword: {keyword}")
+            response = self.scholar_agent.llm.invoke(prompt)
+            logger.info(f"LLM response: {response.content}")
+
+            # Parse the response to extract search queries
+            queries = []
+            lines = response.content.strip().split("\n")
+
+            for line in lines:
+                line = line.strip()
+                # More flexible parsing - accept lines that contain actual search terms
+                if (
+                    line
+                    and len(line) > 2
+                    and not line.startswith("다음과")
+                    and not line.startswith("각 쿼리")
+                    and not line.startswith("총")
+                    and not line.startswith("1.")
+                    and not line.startswith("2.")
+                    and not line.startswith("3.")
+                    and not line.startswith("4.")
+                    and not line.startswith("5.")
+                    and not line.startswith("-")
+                    and not line.startswith("*")
+                ):
+                    # Clean up the query
+                    query = line.replace('"', "").replace("'", "").strip()
+                    # Remove common prefixes
+                    query = query.replace("기본 키워드:", "").strip()
+                    query = query.replace("관련 기술:", "").strip()
+                    query = query.replace("구체적인 용어:", "").strip()
+                    query = query.replace("저자/기관:", "").strip()
+
+                    if query and len(query) > 1:
+                        queries.append(query)
+
+            logger.info(f"Parsed queries from LLM: {queries}")
+
+            # Fallback queries if LLM doesn't provide good results
+            if not queries:
+                logger.warning("No queries parsed from LLM, using fallback queries")
+                queries = [keyword, f"ti:{keyword}", f"abs:{keyword}"]
+
+            logger.info(f"Final search queries: {queries}")
+            return queries
+
+        except Exception as e:
+            logger.error(f"Error generating search queries: {e}")
+            # Return basic fallback queries
+            return [keyword, f"ti:{keyword}", f"abs:{keyword}"]
+
+    def _search_arxiv_with_query(
+        self, query: str, max_results: int = 10
+    ) -> List[Paper]:
+        """Search arXiv with a specific query"""
+        try:
+            # Use the correct arXiv API endpoint
+            base_url = "http://export.arxiv.org/api/query"
+
+            params = {
+                "search_query": query,
+                "start": 0,
+                "max_results": max_results,
+                "sortBy": "relevance",
+                "sortOrder": "descending",
+            }
+
+            logger.info(f"Searching arXiv with query: {query}")
+            logger.info(f"Request params: {params}")
+            logger.info(f"Request URL: {base_url}")
+
+            response = requests.get(base_url, params=params, timeout=30)
+            logger.info(f"arXiv API response status: {response.status_code}")
+            logger.info(f"Response content length: {len(response.content)}")
+
+            response.raise_for_status()
+
+            # Parse XML response
+            root = ET.fromstring(response.content)
+            ns = {
+                "atom": "http://www.w3.org/2005/Atom",
+                "arxiv": "http://arxiv.org/schemas/atom",
+            }
+
+            papers = []
+            entries = root.findall("atom:entry", ns)
+            logger.info(f"Found {len(entries)} entries in arXiv response")
+
+            for entry in entries:
+                paper = self.scholar_agent._parse_arxiv_entry(entry, ns)
+                if paper and paper.title != "No Title" and paper.title.strip():
+                    papers.append(paper)
+                    logger.info(f"Added paper: {paper.title[:50]}...")
+
+            logger.info(f"Successfully parsed {len(papers)} papers for query: {query}")
+            return papers
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network error searching arXiv with query '{query}': {e}")
+            return []
+        except ET.ParseError as e:
+            logger.error(f"XML parsing error for query '{query}': {e}")
+            logger.error(f"Response content preview: {response.content[:500]}")
+            return []
+        except Exception as e:
+            logger.error(f"Unexpected error searching arXiv with query '{query}': {e}")
+            return []
+
+    def _remove_duplicate_papers(self, papers: List[Paper]) -> List[Paper]:
+        """Remove duplicate papers based on title"""
+        seen_titles = set()
+        unique_papers = []
+
+        for paper in papers:
+            title_lower = paper.title.lower()
+            if title_lower not in seen_titles:
+                seen_titles.add(title_lower)
+                unique_papers.append(paper)
+
+        return unique_papers
+
+    def _rank_papers_by_relevance(
+        self, papers: List[Paper], keyword: str
+    ) -> List[Paper]:
+        """Rank papers by relevance to the keyword using LLM"""
+        try:
+            if not papers:
+                return papers
+
+            # Create a simple relevance scoring based on keyword matches
+            for paper in papers:
+                score = 0.0
+                title_lower = paper.title.lower()
+                abstract_lower = paper.abstract.lower()
+                keyword_lower = keyword.lower()
+
+                # Title matches get higher score
+                if keyword_lower in title_lower:
+                    score += 0.8
+
+                # Abstract matches get medium score
+                if keyword_lower in abstract_lower:
+                    score += 0.5
+
+                # Category matches get lower score
+                for category in paper.categories:
+                    if keyword_lower in category.lower():
+                        score += 0.3
+
+                paper.relevance_score = min(score, 1.0)  # Cap at 1.0
+
+            # Sort by relevance score
+            papers.sort(key=lambda x: x.relevance_score, reverse=True)
+            return papers
+
+        except Exception as e:
+            logger.error(f"Error ranking papers: {e}")
+            return papers
+
+    def _convert_papers_to_responses(
+        self, papers: List[Paper]
+    ) -> List[ResearchResponse]:
+        """Convert Paper objects to ResearchResponse objects"""
+        responses = []
+
+        for i, paper in enumerate(papers):
+            response = ResearchResponse(
+                id=i + 1,
+                title=paper.title,
+                abstract=paper.abstract or "No abstract available",
+                authors=paper.authors,
+                published_date=paper.published_date,
+                updated_date=paper.updated_date,
+                categories=paper.categories,
+                pdf_url=paper.pdf_url,
+                arxiv_url=paper.arxiv_url,
+                citation_count=paper.citation_count,
+                relevance_score=paper.relevance_score,
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+            )
+            responses.append(response)
+
+        return responses
+
+    def _create_dummy_response_for_keyword(
+        self, keyword: str, message: str
+    ) -> List[ResearchResponse]:
+        """Create dummy response for keyword search when no results found"""
+        dummy_responses = []
+
+        for i in range(5):
+            response = ResearchResponse(
+                id=i + 1,
+                title=f"Research needed for '{keyword}' - Paper {i + 1}",
+                abstract=message,
+                authors=[],
+                published_date=None,
+                updated_date=None,
+                categories=[],
+                pdf_url=None,
+                arxiv_url=None,
+                citation_count=0,
+                relevance_score=0.0,
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+            )
+            dummy_responses.append(response)
+
+        return dummy_responses
+
     def search_research(self, research: ResearchSearch) -> ResearchSearchResponse:
         """
         Search for research papers with database caching
