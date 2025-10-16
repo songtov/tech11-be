@@ -255,7 +255,7 @@ class VideoAgent:
                 if os.path.exists(image_path):
                     # Create image clip
                     clip = ImageClip(image_path, duration=durations[i])
-                    clip = clip.resized(self.resolution)
+                    clip = clip.resize(self.resolution)
                     clips.append(clip)
                 else:
                     logger.warning(f"Image not found: {image_path}")
@@ -274,11 +274,11 @@ class VideoAgent:
         """Assemble final video from clips and audio"""
         try:
             # Concatenate video clips
-            final_video = concatenate_videoclips(video_clips, method="compose")
+            final_video = concatenate_videoclips(video_clips)
 
             # Add audio
             audio_clip = AudioFileClip(audio_path)
-            final_video = final_video.with_audio(audio_clip)
+            final_video = final_video.set_audio(audio_clip)
 
             # Write video file
             final_video.write_videofile(
@@ -390,6 +390,7 @@ class VideoAgent:
             )
             # Copy base video to final path if no animation
             import shutil
+
             shutil.copy2(base_video_path_str, str(final_video_path))
             final_video_path_str = str(final_video_path)
 
@@ -420,6 +421,7 @@ class VideoAgent:
                     "PyToon not available, copying base video without animation"
                 )
                 import shutil
+
                 shutil.copy2(base_video_path, output_path)
                 return output_path
 
@@ -455,5 +457,6 @@ class VideoAgent:
             logger.error(f"Error adding animation overlay: {e}")
             logger.warning("Falling back to base video without animation")
             import shutil
+
             shutil.copy2(base_video_path, output_path)
             return output_path
