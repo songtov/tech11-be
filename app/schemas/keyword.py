@@ -7,7 +7,10 @@ class KeywordExtractFromTextRequest(BaseModel):
     """텍스트로부터 키워드 추출 요청"""
 
     text: str = Field(
-        ..., description="키워드를 추출할 텍스트 또는 검색어", min_length=1, max_length=1000
+        ...,
+        description="키워드를 추출할 텍스트 또는 검색어",
+        min_length=1,
+        max_length=1000,
     )
 
 

@@ -54,7 +54,11 @@ class KeywordService:
         """Save uploaded file to temporary location and return path"""
         try:
             # Create temporary file
-            suffix = os.path.splitext(upload_file.filename)[1] if upload_file.filename else ".pdf"
+            suffix = (
+                os.path.splitext(upload_file.filename)[1]
+                if upload_file.filename
+                else ".pdf"
+            )
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
 
             # Read and write file content
@@ -159,7 +163,7 @@ class KeywordService:
 
         try:
             # 1. Validate file type
-            if not file.filename.lower().endswith('.pdf'):
+            if not file.filename.lower().endswith(".pdf"):
                 raise ValueError("Only PDF files are supported")
 
             logger.info(f"📥 Processing uploaded PDF: {file.filename}")
