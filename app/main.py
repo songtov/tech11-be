@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routes.chatbot import router as chatbot_router
+from app.routes.keyword import router as keyword_router
 from app.routes.quiz import router as quiz_router
 from app.routes.research import router as research_router
 from app.routes.summary import router as summary_router
@@ -27,6 +28,7 @@ def read_root():
 
 app.include_router(research_router)
 app.include_router(quiz_router)
+app.include_router(keyword_router)
 app.include_router(tts_router)
 app.include_router(summary_router)
 app.include_router(chatbot_router)
